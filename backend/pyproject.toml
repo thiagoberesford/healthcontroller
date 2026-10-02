@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.9",
     "python-dotenv>=1.0",
     "garminconnect>=0.2.25",
+    "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]

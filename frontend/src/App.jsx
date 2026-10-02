@@ -16,6 +16,7 @@ const TABS = [
 export default function App() {
   const [tab, setTab] = useState("overview");
   const [mode, setMode] = useState("local");
+  const [sbMode, setSbMode] = useState(false);
   const [meals, setMeals] = useState([]);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -23,9 +24,16 @@ export default function App() {
     (async () => {
       await api.probe();
       setMode(api.mode);
+      setSbMode(await api.probeSupabase());
       setMeals(await api.listMeals());
     })();
   }, [refreshKey]);
+
+  const supabaseBadge = sbMode ? (
+    <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(74,222,128,.15)", color: C.green }}>
+      ● supabase
+    </span>
+  ) : null;
 
   const badge =
     mode === "backend" ? (
@@ -50,6 +58,7 @@ export default function App() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {supabaseBadge}
           {badge}
           <button
             onClick={() => setRefreshKey((k) => k + 1)}

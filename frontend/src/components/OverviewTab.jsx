@@ -12,24 +12,40 @@ import {
 } from "recharts";
 import { Card, Ring, StatCard } from "./ui.jsx";
 import { C, axisProps, tooltipStyle, fmtTime } from "../theme.js";
-import { daily } from "../lib/mock.js";
 import { api } from "../lib/api.js";
+import { addDays, dateKey, dayMonth } from "../lib/garmin.js";
 import { TYPE_LABEL, TYPE_COLOR, fmtDate, fmtKcal } from "../lib/garmin.js";
 
 export default function OverviewTab({ meals }) {
+  const [daily, setDaily] = useState(null);
   const [recent, setRecent] = useState([]);
 
   useEffect(() => {
     (async () => {
+      const today = new Date();
+      const start = addDays(dateKey(today), -13);
+      const list = await api.listGarminDaily(start, dateKey(today));
+      setDaily(list.map((d) => ({
+        label: dayMonth(d.date),
+        steps: d.steps,
+        activeCalories: d.active_kcal,
+        sleepHours: d.sleep_hours,
+        restingHr: d.resting_hr,
+        hrv: d.hrv,
+        intenseMin: d.intense_min,
+        caloriesBurned: d.total_kcal,
+      })));
       const acts = await api.listGarminActivities();
       setRecent(acts.slice(0, 5));
     })();
   }, []);
 
-  const last = daily[daily.length - 1];
-  const prevWeek = daily.slice(0, 7);
+  const last = daily && daily.length ? daily[daily.length - 1] : null;
+  const prevWeek = daily ? daily.slice(0, 7) : [];
   const avg = (arr, key) =>
-    +(arr.reduce((s, d) => s + d[key], 0) / arr.length).toFixed(0);
+    arr.length
+      ? +(arr.reduce((s, d) => s + (d[key] || 0), 0) / arr.filter((d) => d[key]).length).toFixed(0)
+      : "—";
 
   const kcalInToday = meals
     .filter((m) => m.date === new Date().toISOString().slice(0, 10))
@@ -37,29 +53,35 @@ export default function OverviewTab({ meals }) {
 
   return (
     <div className="space-y-6">
+      {!last ? (
+        <Card className="p-8 text-center text-sm" style={{ color: C.muted }}>
+          A carregar dados do Supabase… (se não aparecer, verifique VITE_SUPABASE_URL/ANON_KEY)
+        </Card>
+      ) : (
       <Card className="p-6">
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-          <Ring value={last.steps} max={10000} label="Passos" unit="passos" color={C.blue} />
-          <Ring value={last.activeCalories} max={800} label="Calorias ativas" unit="kcal" color={C.orange} />
-          <Ring value={last.sleepHours} max={9} label="Sono" unit="horas" color={C.purple} />
-          <Ring value={last.load} max={700} label="Carga treino" unit="load" color={C.teal} />
+          <Ring value={last.steps || 0} max={10000} label="Passos" unit="passos" color={C.blue} />
+          <Ring value={last.activeCalories || 0} max={800} label="Calorias ativas" unit="kcal" color={C.orange} />
+          <Ring value={last.sleepHours || 0} max={9} label="Sono" unit="horas" color={C.purple} />
+          <Ring value={last.hrv || 0} max={90} label="HRV noite" unit="ms" color={C.teal} />
         </div>
       </Card>
+      )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="FC repouso" value={last.restingHr} unit="bpm" delta="-2 bpm" color={C.red} />
-        <StatCard label="HRV (média 7d)" value={avg(prevWeek, "hrv")} unit="ms" delta="+4 ms" color={C.green} />
-        <StatCard label="Gasto diário" value={last.caloriesBurned} unit="kcal" color={C.orange} />
+        <StatCard label="FC repouso" value={last?.restingHr ?? "—"} unit="bpm" color={C.red} />
+        <StatCard label="HRV (média 7d)" value={avg(prevWeek, "hrv")} unit="ms" color={C.green} />
+        <StatCard label="Gasto diário" value={last?.caloriesBurned ?? "—"} unit="kcal" color={C.orange} />
         <StatCard label="Ingerido hoje" value={kcalInToday || 0} unit="kcal" color={C.teal} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="p-4">
           <h3 className="mb-3 px-2 text-sm font-semibold" style={{ color: C.text }}>
-            Carga de treino (14 dias)
+            Passos (14 dias)
           </h3>
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={daily}>
+            <AreaChart data={daily || []}>
               <defs>
                 <linearGradient id="gLoad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={C.teal} stopOpacity={0.5} />
@@ -70,7 +92,7 @@ export default function OverviewTab({ meals }) {
               <XAxis dataKey="label" {...axisProps} />
               <YAxis {...axisProps} />
               <Tooltip contentStyle={tooltipStyle} />
-              <Area type="monotone" dataKey="load" stroke={C.teal} fill="url(#gLoad)" strokeWidth={2} />
+              <Area type="monotone" dataKey="steps" stroke={C.teal} fill="url(#gLoad)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </Card>
@@ -80,7 +102,7 @@ export default function OverviewTab({ meals }) {
             Sono vs. FC repouso
           </h3>
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={daily}>
+            <LineChart data={daily || []}>
               <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
               <XAxis dataKey="label" {...axisProps} />
               <YAxis yAxisId="l" {...axisProps} domain={[4, 9]} />
@@ -100,9 +122,7 @@ export default function OverviewTab({ meals }) {
         <div className="space-y-2">
           {recent.length === 0 ? (
             <div className="py-4 text-center text-xs" style={{ color: C.muted }}>
-              {api.mode !== "backend"
-                ? "Sem dados Garmin — ligue o backend (uvicorn) para carregar o histórico real."
-                : "Sem atividades."}
+              Sem atividades no Supabase — corra o import (backend/scripts/import_supabase.py).
             </div>
           ) : (
             recent.map((a) => (

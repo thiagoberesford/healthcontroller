@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -11,12 +11,22 @@ import {
 } from "recharts";
 import { Card, Ring } from "./ui.jsx";
 import { C, axisProps, tooltipStyle } from "../theme.js";
-import { daily, todayIso } from "../lib/mock.js";
+import { todayIso } from "../lib/mock.js";
 import { api } from "../lib/api.js";
+import { addDays, dateKey, dayMonth } from "../lib/garmin.js";
 
 export default function NutritionTab({ meals, addMeal, removeMeal }) {
   const [input, setInput] = useState("");
   const [preview, setPreview] = useState(null);
+  const [burnedToday, setBurnedToday] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      const today = dateKey(new Date());
+      const d = await api.listGarminDaily(today, today);
+      setBurnedToday(d.length ? d[0].total_kcal : 0);
+    })();
+  }, []);
 
   const analyze = async () => {
     if (!input.trim()) return setPreview(null);
@@ -45,28 +55,26 @@ export default function NutritionTab({ meals, addMeal, removeMeal }) {
     { kcal: 0, protein: 0, carbs: 0, fat: 0 }
   );
 
-  const burnedToday = daily[daily.length - 1].caloriesBurned;
-
-  const macroByDay = useMemo(
-    () =>
-      daily.map((d) => {
-        const dayMeals = meals.filter((m) => m.date === d.label);
-        const t = dayMeals.reduce(
-          (acc, m) => {
-            const x = m.totals || m;
-            return {
-              kcal: acc.kcal + (x.kcal || 0),
-              protein: +(acc.protein + (x.protein || 0)).toFixed(1),
-              carbs: +(acc.carbs + (x.carbs || 0)).toFixed(1),
-              fat: +(acc.fat + (x.fat || 0)).toFixed(1),
-            };
-          },
-          { kcal: 0, protein: 0, carbs: 0, fat: 0 }
-        );
-        return { label: d.label, ...t, queimadas: d.caloriesBurned };
-      }),
-    [meals]
-  );
+  const macroByDay = useMemo(() => {
+    const today = new Date();
+    return Array.from({ length: 14 }, (_, i) => {
+      const dayIso = addDays(dateKey(today), -(13 - i));
+      const dayMeals = meals.filter((m) => m.date === dayIso);
+      const t = dayMeals.reduce(
+        (acc, m) => {
+          const x = m.totals || m;
+          return {
+            kcal: acc.kcal + (x.kcal || 0),
+            protein: +(acc.protein + (x.protein || 0)).toFixed(1),
+            carbs: +(acc.carbs + (x.carbs || 0)).toFixed(1),
+            fat: +(acc.fat + (x.fat || 0)).toFixed(1),
+          };
+        },
+        { kcal: 0, protein: 0, carbs: 0, fat: 0 }
+      );
+      return { label: dayMonth(dayIso), ...t };
+    });
+  }, [meals]);
 
   const inputStyle = { background: C.card2, border: `1px solid ${C.border}`, color: C.text };
 
@@ -132,10 +140,11 @@ export default function NutritionTab({ meals, addMeal, removeMeal }) {
           <Ring value={todayTotals.fat} max={80} label="Gordura" unit="g" color={C.purple} />
         </div>
         <p className="mt-4 text-center text-xs" style={{ color: C.muted }}>
-          Balanço de hoje: <span style={{ color: todayTotals.kcal - burnedToday < 0 ? C.green : C.red }}>
-            {(todayTotals.kcal - burnedToday).toLocaleString("pt-BR")} kcal
+          Balanço de hoje:{" "}
+          <span style={{ color: todayTotals.kcal - (burnedToday || 0) < 0 ? C.green : C.red }}>
+            {(todayTotals.kcal - (burnedToday || 0)).toLocaleString("pt-BR")} kcal
           </span>{" "}
-          (ingeridas {todayTotals.kcal} − queimadas {burnedToday})
+          (ingeridas {todayTotals.kcal} − queimadas {burnedToday ?? "…"})
         </p>
       </Card>
 

@@ -44,6 +44,16 @@ Servidores MCP úteis para consultar/ingestar dados Garmin no Claude/VSCode:
 
 Exemplo de uso: registar o server no cliente MCP com as credenciais por env, e pedir "últimos 7 dias de atividades" — os dados podem ser copiados para `backend/data/garmin_cache.json` no mesmo formato do cache.
 
+## Supabase (Fase 2 — ativo)
+
+- Tabelas: `garmin_activities` (1.437) e `garmin_daily` (2.656 dias), RLS de leitura
+  para anon — migration em `supabase/migrations/`
+- Import do snapshot (idempotente, re-executável após cada sync):
+  `SUPABASE_DB_URL` em `backend/.env` → `.venv/bin/python scripts/import_supabase.py`
+- Frontend lê diretamente do Supabase (`@supabase/supabase-js`, chaves em
+  `frontend/.env.production`); backend local fica opcional
+- Fluxo de atualização: `garmin_snapshot.py` → `import_supabase.py` → push (redeploy)
+
 ## Suunto (Fase 3)
 
 Preferência do utilizador por marcas europeias (Suunto, Finlândia). Sem API pública oficial

@@ -13,6 +13,8 @@ from app.config import DATA_DIR, GARMIN_DOMAIN, GARMIN_EMAIL, GARMIN_PASSWORD, G
 
 CACHE_PATH = DATA_DIR / "garmin_cache.json"
 EXPORT_ACTIVITIES_PATH = DATA_DIR / "garmin_export" / "activities.json"
+EXPORT_DAILY_DIR = DATA_DIR / "garmin_export" / "daily"
+EXPORT_SLEEP_DIR = DATA_DIR / "garmin_export" / "sleep"
 
 
 def read_cache() -> dict:
@@ -34,6 +36,52 @@ def list_activities(start_iso: str | None = None, end_iso: str | None = None) ->
     if end_iso:
         acts = [a for a in acts if a["start"][:10] <= end_iso]
     return acts
+
+
+def list_daily(start_iso: str | None = None, end_iso: str | None = None) -> list[dict]:
+    """Série diária do snapshot (passos, kcal, FC repouso, HRV, sono, stress)."""
+    if not EXPORT_DAILY_DIR.exists():
+        return []
+    out = []
+    for p in sorted(EXPORT_DAILY_DIR.glob("*.json")):
+        d = p.stem
+        if start_iso and d < start_iso:
+            continue
+        if end_iso and d > end_iso:
+            continue
+        data = json.loads(p.read_text())
+        if "error" in data or not data.get("stats"):
+            continue
+        stats = data["stats"]
+        hrv = ((data.get("hrv") or {}).get("hrvSummary") or {})
+        sleep_h = None
+        sleep_p = EXPORT_SLEEP_DIR / p.name
+        if sleep_p.exists():
+            try:
+                dto = (json.loads(sleep_p.read_text()).get("dailySleepDTO") or {})
+                secs = dto.get("sleepTimeSeconds")
+                if secs:
+                    sleep_h = round(secs / 3600, 1)
+            except Exception:
+                pass
+        intense = (stats.get("moderateIntensityMinutes") or 0) + (
+            stats.get("vigorousIntensityMinutes") or 0
+        )
+        out.append(
+            {
+                "date": d,
+                "steps": stats.get("totalSteps"),
+                "active_kcal": stats.get("activeKilocalories"),
+                "total_kcal": stats.get("totalKilocalories"),
+                "resting_hr": stats.get("restingHeartRate"),
+                "hrv": hrv.get("lastNightAvg"),
+                "sleep_hours": sleep_h,
+                "stress_avg": stats.get("averageStressLevel"),
+                "floors": stats.get("floorsAscended"),
+                "intense_min": intense or None,
+            }
+        )
+    return out
 
 
 def write_cache(payload: dict) -> None:

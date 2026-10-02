@@ -73,6 +73,16 @@ def garmin_activities(start: date | None = None, end: date | None = None):
     }
 
 
+@app.get("/api/garmin/daily")
+def garmin_daily(start: date | None = None, end: date | None = None):
+    return {
+        "daily": garmin_service.list_daily(
+            start.isoformat() if start else None,
+            end.isoformat() if end else None,
+        )
+    }
+
+
 @app.post("/api/garmin/sync")
 def garmin_sync(full: bool = False, days: int = 7):
     try:

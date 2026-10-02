@@ -1,7 +1,20 @@
-/* Camada de API dupla: backend (se disponível) ou modo local (localStorage). */
+/* Camada de API dupla: backend (se disponível) ou modo local (localStorage).
+   Dados Garmin: Supabase (se configurado) > backend > vazio. */
+import { createClient } from "@supabase/supabase-js";
 import { parseMealLocal, computeTotals, macrosOf } from "./foodParser";
 
 export const API_BASE = import.meta.env.VITE_API_BASE || null;
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || null;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || null;
+
+let sbClient = null;
+const supabase = () => {
+  if (!sbClient && SUPABASE_URL && SUPABASE_ANON_KEY) {
+    sbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+  return sbClient;
+};
 
 const STORE_KEY = "health-controller-v1";
 const makeId = () =>
@@ -105,13 +118,56 @@ export const api = {
   },
 
   async listGarminActivities(start, end) {
-    if (this.mode !== "backend") return [];
-    try {
-      const q = start && end ? `?start=${start}&end=${end}` : "";
-      const r = await fetch(`${API_BASE || ""}/api/garmin/activities${q}`);
-      if (r.ok) return (await r.json()).activities;
-    } catch (e) {}
+    const sb = supabase();
+    if (sb) {
+      try {
+        let q = sb.from("garmin_activities").select("*").order("start", { ascending: false });
+        if (start) q = q.gte("start", `${start} 00:00:00`);
+        if (end) q = q.lte("start", `${end} 23:59:59`);
+        const { data, error } = await q;
+        if (!error) return data || [];
+      } catch (e) {}
+    }
+    if (this.mode === "backend") {
+      try {
+        const q = start && end ? `?start=${start}&end=${end}` : "";
+        const r = await fetch(`${API_BASE || ""}/api/garmin/activities${q}`);
+        if (r.ok) return (await r.json()).activities;
+      } catch (e) {}
+    }
     return [];
+  },
+
+  async listGarminDaily(start, end) {
+    const sb = supabase();
+    if (sb) {
+      try {
+        let q = sb.from("garmin_daily").select("*").order("date", { ascending: true });
+        if (start) q = q.gte("date", start);
+        if (end) q = q.lte("date", end);
+        const { data, error } = await q;
+        if (!error) return data || [];
+      } catch (e) {}
+    }
+    if (this.mode === "backend") {
+      try {
+        const q = start && end ? `?start=${start}&end=${end}` : "";
+        const r = await fetch(`${API_BASE || ""}/api/garmin/daily${q}`);
+        if (r.ok) return (await r.json()).daily;
+      } catch (e) {}
+    }
+    return [];
+  },
+
+  async probeSupabase() {
+    const sb = supabase();
+    if (!sb) return false;
+    try {
+      const { error } = await sb.from("garmin_daily").select("date").limit(1);
+      return !error;
+    } catch (e) {
+      return false;
+    }
   },
 
   async listBody() {

@@ -1,33 +1,10 @@
-/* Dados de exemplo (mock Garmin/Suunto/Mi Scale) usados enquanto não há backend sincronizado.
-   Nota: atividades são sempre reais (Garmin via backend); mocks apenas para séries diárias/corpo. */
+/* Dados de exemplo usados enquanto não há backend sincronizado.
+   Séries de treinos/diários são sempre reais (Supabase/ Garmin); mock apenas para corpo. */
 const today = new Date();
 export const isoDate = (d) => d.toISOString().slice(0, 10);
 export const todayIso = isoDate(today);
 export const dayLabel = (d) =>
   d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-
-const rand = (min, max, seed) => {
-  const x = Math.sin(seed * 999) * 10000;
-  const frac = x - Math.floor(x);
-  return Math.round(min + frac * (max - min));
-};
-
-const DAYS14 = Array.from({ length: 14 }, (_, i) => {
-  const d = new Date(today);
-  d.setDate(d.getDate() - (13 - i));
-  return dayLabel(d);
-});
-
-export const daily = DAYS14.map((label, i) => ({
-  label,
-  steps: rand(5200, 14200, i + 1),
-  caloriesBurned: rand(2050, 2950, i + 2),
-  activeCalories: rand(320, 880, i + 3),
-  sleepHours: +(rand(580, 490, i + 4) / 100).toFixed(1),
-  restingHr: rand(52, 61, i + 5),
-  hrv: rand(48, 78, i + 6),
-  load: rand(120, 640, i + 7),
-}));
 
 export const bodyMeasurements = [0, 2, 4, 6, 8, 10, 12].map((back) => {
   const d = new Date(today);
@@ -46,5 +23,3 @@ export const bodyMeasurements = [0, 2, 4, 6, 8, 10, 12].map((back) => {
     visceral: Math.max(6, Math.round(8 - 1 * t)),
   };
 });
-
-export const last14Labels = DAYS14;

@@ -30,3 +30,16 @@ export const fmtDate = (iso) => {
 
 export const fmtKcal = (kcal) =>
   kcal ? Math.round(kcal).toLocaleString("pt-BR") : "—";
+
+export const dateKey = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+
+export const addDays = (iso, n) => {
+  const d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return dateKey(d);
+};
+
+export const dayMonth = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
