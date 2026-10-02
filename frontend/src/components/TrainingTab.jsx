@@ -12,6 +12,7 @@ import {
 import { Card, StatCard } from "./ui.jsx";
 import { C, axisProps, tooltipStyle, fmtTime } from "../theme.js";
 import { api } from "../lib/api.js";
+import { RUN_TYPES, TYPE_LABEL, TYPE_COLOR, fmtDate, fmtKcal } from "../lib/garmin.js";
 
 const PERIODS = [
   { id: "day", label: "Hoje", days: 1 },
@@ -21,27 +22,6 @@ const PERIODS = [
   { id: "year", label: "1 ano", days: 365 },
   { id: "all", label: "Tudo", days: null },
 ];
-
-const RUN_TYPES = new Set(["running", "treadmill_running", "trail_running"]);
-
-const TYPE_LABEL = {
-  running: "Corrida",
-  treadmill_running: "Esteira",
-  trail_running: "Trail",
-  strength_training: "Força",
-  indoor_cycling: "Bicicleta indoor",
-  walking: "Caminhada",
-  other: "Outro",
-};
-const TYPE_COLOR = {
-  running: C.blue,
-  treadmill_running: "#60a5fa",
-  trail_running: C.teal,
-  strength_training: C.orange,
-  indoor_cycling: C.green,
-  walking: C.muted,
-  other: C.purple,
-};
 
 const dateKey = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
@@ -54,11 +34,6 @@ const addDays = (iso, n) => {
   return dateKey(d);
 };
 
-const fmtDate = (iso) => {
-  const [y, m, day] = iso.slice(0, 10).split("-");
-  return `${day}/${m}/${y}`;
-};
-
 const sumBy = (list, fn) => list.reduce((s, a) => s + (fn(a) || 0), 0);
 
 const pctDelta = (curr, prev) => {
@@ -69,29 +44,46 @@ const pctDelta = (curr, prev) => {
 
 export default function TrainingTab() {
   const [periodId, setPeriodId] = useState("month");
+  const [custom, setCustom] = useState({ start: "", end: "" });
   const [acts, setActs] = useState(null);
   const [prevActs, setPrevActs] = useState([]);
   const [visible, setVisible] = useState(30);
 
   const period = PERIODS.find((p) => p.id === periodId);
 
-  const { start, end } = useMemo(() => {
-    if (!period.days) return { start: null, end: null };
+  const { start, end, days } = useMemo(() => {
+    if (periodId === "custom") {
+      const [a, b] =
+        custom.start <= custom.end ? [custom.start, custom.end] : [custom.end, custom.start];
+      if (!a || !b) return { start: null, end: null, days: null, incomplete: true };
+      const span = Math.round((new Date(b) - new Date(a)) / 86400000) + 1;
+      return { start: a, end: b, days: span };
+    }
+    if (!period.days) return { start: null, end: null, days: null };
     const today = new Date();
-    return { start: addDays(dateKey(today), -(period.days - 1)), end: dateKey(today) };
-  }, [period]);
+    return {
+      start: addDays(dateKey(today), -(period.days - 1)),
+      end: dateKey(today),
+      days: period.days,
+    };
+  }, [periodId, custom, period]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      setActs(null);
       setVisible(30);
+      if (periodId === "custom" && (!custom.start || !custom.end)) {
+        setActs([]);
+        setPrevActs([]);
+        return;
+      }
+      setActs(null);
       const list = await api.listGarminActivities(start, end);
       if (!alive) return;
       setActs(list);
-      if (start) {
+      if (start && days) {
         const prev = await api.listGarminActivities(
-          addDays(start, -period.days),
+          addDays(start, -days),
           addDays(start, -1),
         );
         if (alive) setPrevActs(prev);
@@ -102,7 +94,7 @@ export default function TrainingTab() {
     return () => {
       alive = false;
     };
-  }, [start, end, period]);
+  }, [periodId, custom, start, end, days]);
 
   const stats = useMemo(() => {
     if (!acts) return null;
@@ -127,7 +119,6 @@ export default function TrainingTab() {
   /* Gráfico de km: bucket por dia (<=35d), semana (<=190d) ou mês (resto). */
   const chart = useMemo(() => {
     if (!acts) return { data: [], unit: "" };
-    const days = period.days;
     const points = new Map();
     const add = (key, km) => points.set(key, +(points.get(key) || 0) + km);
 
@@ -167,21 +158,33 @@ export default function TrainingTab() {
       })),
       unit: byWeek ? "semana" : "mês",
     };
-  }, [acts, period, end]);
+  }, [acts, days, end]);
 
   const shown = acts ? acts.slice(0, visible) : [];
+
+  const selectPeriod = (id) => {
+    if (id === "custom" && !custom.start && !custom.end && start && end) {
+      setCustom({ start, end });
+    }
+    setPeriodId(id);
+  };
+
+  const title =
+    periodId === "custom"
+      ? `Treinos (${custom.start ? fmtDate(custom.start) : "…"} – ${custom.end ? fmtDate(custom.end) : "…"})`
+      : `Treinos (${period.days ? period.label : "todo o histórico"})`;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-semibold" style={{ color: C.text }}>
-          Treinos ({period.days ? period.label : "todo o histórico"})
+          {title}
         </h2>
         <div className="flex flex-wrap gap-1.5">
           {PERIODS.map((p) => (
             <button
               key={p.id}
-              onClick={() => setPeriodId(p.id)}
+              onClick={() => selectPeriod(p.id)}
               className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
               style={{
                 background: p.id === periodId ? C.teal : C.card,
@@ -192,8 +195,48 @@ export default function TrainingTab() {
               {p.label}
             </button>
           ))}
+          <button
+            onClick={() => selectPeriod("custom")}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
+            style={{
+              background: periodId === "custom" ? C.teal : C.card,
+              color: periodId === "custom" ? "#04141a" : C.muted,
+              border: `1px solid ${periodId === "custom" ? C.teal : C.border}`,
+            }}
+          >
+            Personalizado
+          </button>
         </div>
       </div>
+
+      {periodId === "custom" && (
+        <div className="flex flex-wrap items-center gap-4">
+          {[
+            { key: "start", label: "De" },
+            { key: "end", label: "Até" },
+          ].map(({ key, label }) => (
+            <label key={key} className="flex items-center gap-2 text-xs" style={{ color: C.muted }}>
+              {label}
+              <input
+                type="date"
+                value={custom[key]}
+                min="2019-06-26"
+                onChange={(e) => setCustom((c) => ({ ...c, [key]: e.target.value }))}
+                className="rounded-lg px-2.5 py-1.5 text-xs"
+                style={{
+                  background: C.card,
+                  border: `1px solid ${C.border}`,
+                  color: C.text,
+                  accentColor: C.teal,
+                }}
+              />
+            </label>
+          ))}
+          <span className="text-xs" style={{ color: C.muted }}>
+            Ex.: 01/01/2021 → 01/01/2023
+          </span>
+        </div>
+      )}
 
       {!stats ? (
         <Card className="p-8 text-center text-sm" style={{ color: C.muted }}>
@@ -265,7 +308,11 @@ export default function TrainingTab() {
             </h3>
             {shown.length === 0 ? (
               <div className="py-6 text-center text-xs" style={{ color: C.muted }}>
-                Sem atividades neste período.
+                {periodId === "custom" && (!custom.start || !custom.end)
+                  ? "Selecione as duas datas (De / Até) para filtrar."
+                  : api.mode !== "backend"
+                  ? "Sem dados Garmin — ligue o backend (uvicorn) para carregar o histórico real."
+                  : "Sem atividades neste período."}
               </div>
             ) : (
               <div className="space-y-2">
@@ -294,7 +341,7 @@ export default function TrainingTab() {
                       {a.distance_km > 0 && <span>{a.distance_km.toFixed(1)} km</span>}
                       <span>{fmtTime(a.duration_s)}</span>
                       <span style={{ color: C.orange }}>
-                        {a.kcal ? Math.round(a.kcal).toLocaleString("pt-BR") : "—"} kcal
+                        {fmtKcal(a.kcal)} kcal
                       </span>
                     </div>
                   </div>

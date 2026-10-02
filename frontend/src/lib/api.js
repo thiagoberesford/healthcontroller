@@ -105,15 +105,13 @@ export const api = {
   },
 
   async listGarminActivities(start, end) {
-    if (this.mode === "backend") {
-      try {
-        const q = start && end ? `?start=${start}&end=${end}` : "";
-        const r = await fetch(`${API_BASE || ""}/api/garmin/activities${q}`);
-        if (r.ok) return (await r.json()).activities;
-      } catch (e) {}
-    }
-    const { mockGarminActivities } = await import("./mock.js");
-    return mockGarminActivities(start, end);
+    if (this.mode !== "backend") return [];
+    try {
+      const q = start && end ? `?start=${start}&end=${end}` : "";
+      const r = await fetch(`${API_BASE || ""}/api/garmin/activities${q}`);
+      if (r.ok) return (await r.json()).activities;
+    } catch (e) {}
+    return [];
   },
 
   async listBody() {

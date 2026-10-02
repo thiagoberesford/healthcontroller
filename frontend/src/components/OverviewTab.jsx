@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -12,9 +12,20 @@ import {
 } from "recharts";
 import { Card, Ring, StatCard } from "./ui.jsx";
 import { C, axisProps, tooltipStyle, fmtTime } from "../theme.js";
-import { daily, activities } from "../lib/mock.js";
+import { daily } from "../lib/mock.js";
+import { api } from "../lib/api.js";
+import { TYPE_LABEL, TYPE_COLOR, fmtDate, fmtKcal } from "../lib/garmin.js";
 
 export default function OverviewTab({ meals }) {
+  const [recent, setRecent] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      const acts = await api.listGarminActivities();
+      setRecent(acts.slice(0, 5));
+    })();
+  }, []);
+
   const last = daily[daily.length - 1];
   const prevWeek = daily.slice(0, 7);
   const avg = (arr, key) =>
@@ -87,35 +98,42 @@ export default function OverviewTab({ meals }) {
           Atividades recentes
         </h3>
         <div className="space-y-2">
-          {activities.slice(0, 5).map((a, i) => (
-            <div
-              key={i}
-              className="flex items-center justify-between rounded-lg px-3 py-2"
-              style={{ background: C.card2, border: `1px solid ${C.border}` }}
-            >
-              <div className="flex items-center gap-3">
-                <span
-                  className="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase"
-                  style={{
-                    background: C.card,
-                    color:
-                      a.type === "Corrida" ? C.blue : a.type === "Força" ? C.orange : C.muted,
-                  }}
-                >
-                  {a.type}
-                </span>
-                <span className="text-sm" style={{ color: C.text }}>
-                  {a.name}
-                </span>
-              </div>
-              <div className="flex gap-4 text-xs" style={{ color: C.muted }}>
-                <span>{a.date}</span>
-                {a.km > 0 && <span>{a.km.toFixed(1)} km</span>}
-                <span>{fmtTime(a.time)}</span>
-                <span style={{ color: C.orange }}>{a.kcal} kcal</span>
-              </div>
+          {recent.length === 0 ? (
+            <div className="py-4 text-center text-xs" style={{ color: C.muted }}>
+              {api.mode !== "backend"
+                ? "Sem dados Garmin — ligue o backend (uvicorn) para carregar o histórico real."
+                : "Sem atividades."}
             </div>
-          ))}
+          ) : (
+            recent.map((a) => (
+              <div
+                key={a.id}
+                className="flex items-center justify-between rounded-lg px-3 py-2"
+                style={{ background: C.card2, border: `1px solid ${C.border}` }}
+              >
+                <div className="flex items-center gap-3">
+                  <span
+                    className="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase"
+                    style={{
+                      background: C.card,
+                      color: TYPE_COLOR[a.type] || C.muted,
+                    }}
+                  >
+                    {TYPE_LABEL[a.type] || a.type}
+                  </span>
+                  <span className="text-sm" style={{ color: C.text }}>
+                    {a.name}
+                  </span>
+                </div>
+                <div className="flex gap-4 text-xs" style={{ color: C.muted }}>
+                  <span>{fmtDate(a.start)}</span>
+                  {a.distance_km > 0 && <span>{a.distance_km.toFixed(1)} km</span>}
+                  <span>{fmtTime(a.duration_s)}</span>
+                  <span style={{ color: C.orange }}>{fmtKcal(a.kcal)} kcal</span>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </Card>
     </div>
