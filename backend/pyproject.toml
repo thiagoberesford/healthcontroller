@@ -1,0 +1,22 @@
+[project]
+name = "health-controller-backend"
+version = "0.1.0"
+description = "API do Health Controller (parser de refeições, corpo, Garmin/Suunto)"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "python-dotenv>=1.0",
+    "garminconnect>=0.2.25",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
