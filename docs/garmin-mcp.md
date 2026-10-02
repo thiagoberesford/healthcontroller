@@ -47,7 +47,8 @@ Exemplo de uso: registar o server no cliente MCP com as credenciais por env, e p
 ## Supabase (Fase 2 — ativo)
 
 - Tabelas: `garmin_activities` (1.437) e `garmin_daily` (2.656 dias), RLS de leitura
-  para anon — migration em `supabase/migrations/`
+  **apenas para utilizadores autenticados** (email/password em Authentication → Users) —
+  migration em `supabase/migrations/`
 - Import do snapshot (idempotente, re-executável após cada sync):
   `SUPABASE_DB_URL` em `backend/.env` → `.venv/bin/python scripts/import_supabase.py`
 - Frontend lê diretamente do Supabase (`@supabase/supabase-js`, chaves em

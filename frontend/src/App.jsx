@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { C } from "./theme.js";
-import { api } from "./lib/api.js";
+import { api, SUPABASE_ENABLED, sbUser, sbSignOut, onSbAuthChange } from "./lib/api.js";
+import LoginScreen from "./components/LoginScreen.jsx";
 import OverviewTab from "./components/OverviewTab.jsx";
 import TrainingTab from "./components/TrainingTab.jsx";
 import BodyTab from "./components/BodyTab.jsx";
@@ -16,22 +17,37 @@ const TABS = [
 export default function App() {
   const [tab, setTab] = useState("overview");
   const [mode, setMode] = useState("local");
-  const [sbMode, setSbMode] = useState(false);
+  const [user, setUser] = useState(SUPABASE_ENABLED ? undefined : null);
   const [meals, setMeals] = useState([]);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    if (!SUPABASE_ENABLED) return;
+    sbUser().then(setUser);
+    return onSbAuthChange(setUser);
+  }, []);
 
   useEffect(() => {
     (async () => {
       await api.probe();
       setMode(api.mode);
-      setSbMode(await api.probeSupabase());
       setMeals(await api.listMeals());
     })();
   }, [refreshKey]);
 
-  const supabaseBadge = sbMode ? (
+  if (SUPABASE_ENABLED && user === undefined) {
+    return (
+      <div className="flex min-h-screen items-center justify-center" style={{ background: C.bg }}>
+        <span className="text-sm" style={{ color: C.muted }}>A carregar…</span>
+      </div>
+    );
+  }
+
+  if (SUPABASE_ENABLED && !user) return <LoginScreen />;
+
+  const supabaseBadge = user ? (
     <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(74,222,128,.15)", color: C.green }}>
-      ● supabase
+      ● {user.email}
     </span>
   ) : null;
 
@@ -60,6 +76,15 @@ export default function App() {
         <div className="flex items-center gap-3">
           {supabaseBadge}
           {badge}
+          {user && (
+            <button
+              onClick={() => sbSignOut()}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+              style={{ background: C.card, border: `1px solid ${C.border}`, color: C.muted }}
+            >
+              Sair
+            </button>
+          )}
           <button
             onClick={() => setRefreshKey((k) => k + 1)}
             className="rounded-lg px-3 py-1.5 text-xs font-semibold"
@@ -99,7 +124,7 @@ export default function App() {
       )}
 
       <footer className="mt-10 pb-6 text-center text-xs" style={{ color: C.muted }}>
-        Dados locais no navegador (localStorage) · backend opcional · Garmin/Suunto MCP na Fase 2
+        Dados Garmin no Supabase (acesso com login) · refeições no navegador/backend local · Suunto na Fase 3
       </footer>
     </div>
   );

@@ -1,5 +1,5 @@
--- Health Controller: tabelas Garmin (histórico) — leitura pública via anon + RLS,
--- escrita apenas com service_role / DB direto (scripts de import).
+-- Health Controller: tabelas Garmin (histórico) — leitura apenas para
+-- utilizadores autenticados (login). Escrita via DB direto (scripts).
 create table if not exists public.garmin_activities (
   id bigint primary key,
   name text,
@@ -31,8 +31,8 @@ alter table public.garmin_daily enable row level security;
 
 drop policy if exists "read garmin_activities" on public.garmin_activities;
 create policy "read garmin_activities" on public.garmin_activities
-  for select to anon, authenticated using (true);
+  for select to authenticated using (true);
 
 drop policy if exists "read garmin_daily" on public.garmin_daily;
 create policy "read garmin_daily" on public.garmin_daily
-  for select to anon, authenticated using (true);
+  for select to authenticated using (true);

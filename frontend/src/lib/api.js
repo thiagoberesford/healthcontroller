@@ -16,6 +16,35 @@ const supabase = () => {
   return sbClient;
 };
 
+export const SUPABASE_ENABLED = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+
+export async function sbSignIn(email, password) {
+  const sb = supabase();
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  return error ? error.message : null;
+}
+
+export async function sbSignOut() {
+  const sb = supabase();
+  if (sb) await sb.auth.signOut();
+}
+
+export async function sbUser() {
+  const sb = supabase();
+  if (!sb) return null;
+  const { data } = await sb.auth.getSession();
+  return data.session ? data.session.user : null;
+}
+
+export function onSbAuthChange(cb) {
+  const sb = supabase();
+  if (!sb) return () => {};
+  const { data } = sb.auth.onAuthStateChange((_event, session) =>
+    cb(session ? session.user : null),
+  );
+  return () => data.subscription.unsubscribe();
+}
+
 const STORE_KEY = "health-controller-v1";
 const makeId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
