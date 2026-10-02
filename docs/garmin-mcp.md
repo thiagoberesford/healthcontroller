@@ -15,6 +15,24 @@ garmin_service.login_and_sync(days=7)   # sincroniza e grava cache
 
 Depois, `GET /api/garmin` devolve os dados em cache.
 
+## Snapshot completo (backup antes de trocar de ecossistema)
+
+`backend/scripts/garmin_snapshot.py` exporta tudo para `backend/data/garmin_export/`:
+
+- `profile.json` — perfil, dispositivos, gear
+- `activities.json` — metadados de todas as atividades
+- `activity_files/<id>.zip` — ficheiro original (FIT) de cada atividade
+- `body_composition_<ano>.json`, `weigh_ins_<ano>.json` — peso/composição
+- `sleep/<dia>.json`, `daily/<dia>.json` (stats + HRV) — por dia
+
+```bash
+cd backend
+.venv/bin/python -u scripts/garmin_snapshot.py --start 2019-06-26 [--max-seconds 240]
+```
+
+Resumível (rerun continua de onde parou; exit 2 = pausado). 4 workers no fetch diário,
+backoff automático em 429.
+
 ## Via MCP (alternativa, sem código)
 
 Servidores MCP úteis para consultar/ingestar dados Garmin no Claude/VSCode:

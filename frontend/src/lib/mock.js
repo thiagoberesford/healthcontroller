@@ -58,3 +58,28 @@ export const bodyMeasurements = [0, 2, 4, 6, 8, 10, 12].map((back) => {
 });
 
 export const last14Labels = DAYS14;
+
+/* Fallback do modo local: mesmas atividades mock no formato resumido do Garmin. */
+const MOCK_TYPE = { Corrida: "running", "Força": "strength_training" };
+export function mockGarminActivities(start, end) {
+  return activities
+    .map((a) => {
+      const idx = DAYS14.indexOf(a.date);
+      if (idx < 0) return null;
+      const d = new Date(today);
+      d.setDate(d.getDate() - (13 - idx));
+      return {
+        id: `mock-${idx}`,
+        name: a.name,
+        type: MOCK_TYPE[a.type] || "other",
+        start: `${isoDate(d)} ${a.type === "Corrida" ? "08:00:00" : "19:00:00"}`,
+        distance_km: a.km || 0,
+        duration_s: a.time || 0,
+        kcal: a.kcal || 0,
+        avg_hr: a.hr || null,
+      };
+    })
+    .filter(Boolean)
+    .filter((a) => (!start || a.start.slice(0, 10) >= start) && (!end || a.start.slice(0, 10) <= end))
+    .sort((a, b) => b.start.localeCompare(a.start));
+}

@@ -14,3 +14,6 @@ dist/
 # Misc
 .DS_Store
 *.log
+
+# Python build artifacts
+*.egg-info/

@@ -63,6 +63,26 @@ def garmin_data():
     return garmin_service.read_cache()
 
 
+@app.get("/api/garmin/activities")
+def garmin_activities(start: date | None = None, end: date | None = None):
+    return {
+        "activities": garmin_service.list_activities(
+            start.isoformat() if start else None,
+            end.isoformat() if end else None,
+        )
+    }
+
+
+@app.post("/api/garmin/sync")
+def garmin_sync(full: bool = False, days: int = 7):
+    try:
+        if full:
+            return garmin_service.sync_full_history(daily_days=days)
+        return garmin_service.login_and_sync(days=days)
+    except Exception as e:
+        raise HTTPException(502, f"Falha na sincronização Garmin: {e}")
+
+
 @app.get("/api/suunto")
 def suunto_data():
     return suunto_service.read_cache()

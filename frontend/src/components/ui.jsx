@@ -51,7 +51,7 @@ export function Ring({ value, max, label, unit, color, size = 120, icon }) {
   );
 }
 
-export function StatCard({ label, value, unit, delta, color = C.teal, icon }) {
+export function StatCard({ label, value, unit, delta, deltaLabel = "vs. semana anterior", color = C.teal, icon }) {
   const positive = delta ? delta.startsWith("+") : false;
   return (
     <div className="rounded-xl p-4" style={{ background: C.card, border: `1px solid ${C.border}` }}>
@@ -74,7 +74,7 @@ export function StatCard({ label, value, unit, delta, color = C.teal, icon }) {
       {delta && (
         <div className="mt-1 text-xs">
           <span style={{ color: positive ? C.green : C.red }}>{delta}</span>{" "}
-          <span style={{ color: C.muted }}>vs. semana anterior</span>
+          <span style={{ color: C.muted }}>{deltaLabel}</span>
         </div>
       )}
     </div>
