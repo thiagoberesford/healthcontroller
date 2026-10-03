@@ -1,6 +1,21 @@
 # Balança Xiaomi — leitura BLE no macOS (automática, sem export)
 
-## Teste com pesagem real (primeiro passo)
+## Formato confirmado (raw real, MIBFS, 2026-10-03)
+
+A balança anuncia como **"MIBFS"** com service data no UUID **0x181B**:
+
+```
+02 a6 ea 07 0a 03 0b 15 29 40 02 e6 4b
+│  │  └── ano 2026, 10-03 11:21:41    │  └─ peso LE
+│  └─ ctrl1: bit5 estabilizado, bit7 anúncio FINAL └─ impedância LE (576 Ω)
+└─ ctrl0: bit1 = catty (peso raw*0.005 kg, == /200 do openScale)
+```
+
+Peso raw 19430 → **97,15 kg** (confirmado contra o visor).
+O anúncio com bit7 ativo é o **final** (depois de sair da balança) — é o
+que se guarda; os frames sem bit5 são medições em curso e são ignorados.
+
+## Teste com pesagem real
 
 ```bash
 cd backend
