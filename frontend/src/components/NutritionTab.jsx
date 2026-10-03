@@ -320,7 +320,12 @@ export default function NutritionTab({ meals, addMeal, removeMeal }) {
                 <div className="space-y-1">
                   {preview.items.map((it, i) => (
                     <div key={i} className="flex justify-between text-sm">
-                      <span style={{ color: C.text }}>{it.label} <span style={{ color: C.muted }}>({it.grams}g)</span></span>
+                      <span style={{ color: C.text }}>
+                        {it.estimated && (
+                          <span title="estimado pelo LLM — sem produto exato na base" style={{ color: C.orange }}>≈ </span>
+                        )}
+                        {it.label} <span style={{ color: C.muted }}>({it.grams}g)</span>
+                      </span>
                       <span style={{ color: C.muted }}>{it.kcal} kcal · P{it.protein} C{it.carbs} G{it.fat}</span>
                     </div>
                   ))}

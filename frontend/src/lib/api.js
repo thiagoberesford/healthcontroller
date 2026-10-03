@@ -90,7 +90,55 @@ export const api = {
   // ---------------- nutrição ----------------
 
   async parseMeal(text) {
-    if (this.mode === "backend") {
+    const { parseMealLocal, macrosOf, computeTotals, matchFoodLabel } = await import("./foodParser");
+    const foods = await this.listFoods();
+
+    // 1) determinista: produtos exatos da base (grátis)
+    const det = parseMealLocal(text, foods);
+    const wrap = (items, unknown) => {
+      const lite = items.map((p) => ({
+        label: p.label,
+        grams: p.grams,
+        ...macrosOf(p),
+        ...(p.estimated ? { estimated: true } : {}),
+      }));
+      const t = lite.length
+        ? computeTotals(lite)
+        : { kcal: 0, protein: 0, carbs: 0, fat: 0 };
+      return { items: lite, unknown, totals: { label: "Total", grams: 0, ...t } };
+    };
+    if (det.items.length && det.unknown.length === 0) return wrap(det.items, []);
+
+    // 2) LLM (edge function Mistral) — item a item ancorado à base
+    const sb = supabase();
+    if (sb) {
+      try {
+        const { data, error } = await sb.functions.invoke("parse-meal", { body: { text } });
+        if (!error && data?.items?.length) {
+          const items = data.items.map((it) => {
+            const db = matchFoodLabel(it.label, foods);
+            if (db) {
+              return { food: db, grams: it.grams || db.portion || 100, label: db.brand ? `${db.name} (${db.brand})` : db.name };
+            }
+            // sem match na base: estimativa do LLM
+            const g = it.grams || 100;
+            return {
+              label: it.label,
+              grams: g,
+              kcal: Math.round((it.kcal_100g * g) / 100),
+              protein: +((it.protein_100g * g) / 100).toFixed(1),
+              carbs: +((it.carbs_100g * g) / 100).toFixed(1),
+              fat: +((it.fat_100g * g) / 100).toFixed(1),
+              estimated: true,
+            };
+          });
+          return wrap(items, []);
+        }
+      } catch (e) {}
+    }
+
+    // 3) fallback: backend local (dev) ou o que o determinista apanhou
+    if (this.mode === "backend" && !det.items.length) {
       try {
         const r = await fetch(`${API_BASE || ""}/api/parse-meal`, {
           method: "POST",
@@ -100,12 +148,7 @@ export const api = {
         if (r.ok) return await r.json();
       } catch (e) {}
     }
-    const { parseMealLocal, macrosOf, computeTotals } = await import("./foodParser");
-    const foods = await this.listFoods();
-    const { items, unknown } = parseMealLocal(text, foods);
-    const lite = items.map((p) => ({ label: p.label, grams: p.grams, ...macrosOf(p) }));
-    const t = items.length ? computeTotals(items) : { kcal: 0, protein: 0, carbs: 0, fat: 0 };
-    return { items: lite, unknown, totals: { label: "Total", grams: 0, ...t } };
+    return wrap(det.items, det.unknown);
   },
 
   _foodsCache: null,

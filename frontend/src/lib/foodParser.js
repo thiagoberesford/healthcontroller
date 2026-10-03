@@ -247,6 +247,19 @@ const toQueryToks = (tokens) =>
 
 let _lastFoodsRef = null;
 
+/* Ancorar um rótulo (ex.: vindo do LLM) ao alimento real da base.
+   Mais tolerante que o parser (aceita até ~45% de peso residual). */
+export function matchFoodLabel(label, foods) {
+  if (!INDEX || foods !== _lastFoodsRef) {
+    buildIndex(foods);
+    _lastFoodsRef = foods || null;
+  }
+  const queryToks = toQueryToks(String(label || "").split(/\s+/));
+  if (!queryToks.length) return null;
+  const cand = bestCandidate(queryToks);
+  return cand && cand.waste <= 0.45 ? cand.food : null;
+}
+
 export function parseMealLocal(text, foods) {
   // só reconstrói o índice se a base mudou (evita rebuild de 2k alimentos a cada chamada)
   if (!INDEX || foods !== _lastFoodsRef) {
