@@ -115,13 +115,24 @@ export const api = {
     const sb = supabase();
     if (sb) {
       try {
-        const { data, error } = await sb
-          .from("foods")
-          .select("name,brand,category,kcal,protein,carbs,fat,portion")
-          .limit(5000);
-        if (!error && data && data.length) {
-          this._foodsCache = data;
-          return data;
+        // o PostgREST corta em 1000 linhas — paginar até trazer tudo
+        const PAGE = 1000;
+        let from = 0;
+        const all = [];
+        for (let guard = 0; guard < 10; guard++) {
+          const { data, error } = await sb
+            .from("foods")
+            .select("name,brand,category,kcal,protein,carbs,fat,portion")
+            .order("id")
+            .range(from, from + PAGE - 1);
+          if (error || !data || !data.length) break;
+          all.push(...data);
+          if (data.length < PAGE) break;
+          from += PAGE;
+        }
+        if (all.length) {
+          this._foodsCache = all;
+          return all;
         }
       } catch (e) {}
     }

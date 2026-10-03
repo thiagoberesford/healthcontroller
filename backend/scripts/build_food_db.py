@@ -48,7 +48,40 @@ GENERIC_TERMS = [
     "bolo", "tosta mista", "sopa", "salada", "atum",
 ]
 
-# genéricos curados (por 100g; INSA/USDA/TACO aproximações públicas)
+# genéricos base (por 100g; TACO/USDA aproximações públicas) — embutidos
+# (o app/services/food_db.py já não exporta FOODS)
+GENERIC_BASE = [
+    {"name": "Iogurte grego", "portion": 170, "kcal": 97, "protein": 9.0, "carbs": 3.9, "fat": 5.0},
+    {"name": "Iogurte natural", "portion": 170, "kcal": 61, "protein": 3.5, "carbs": 4.7, "fat": 3.3},
+    {"name": "Laranja", "portion": 180, "kcal": 47, "protein": 0.9, "carbs": 11.8, "fat": 0.1},
+    {"name": "Banana", "portion": 120, "kcal": 98, "protein": 1.3, "carbs": 23.4, "fat": 0.2},
+    {"name": "Maçã", "portion": 180, "kcal": 56, "protein": 0.3, "carbs": 14.2, "fat": 0.2},
+    {"name": "Pão integral", "portion": 30, "kcal": 240, "protein": 10.0, "carbs": 42.0, "fat": 3.5},
+    {"name": "Pão de forma", "portion": 30, "kcal": 260, "protein": 9.0, "carbs": 50.0, "fat": 3.0},
+    {"name": "Arroz integral cozido", "portion": 140, "kcal": 124, "protein": 2.6, "carbs": 25.8, "fat": 1.0},
+    {"name": "Arroz branco cozido", "portion": 140, "kcal": 128, "protein": 2.5, "carbs": 28.0, "fat": 0.2},
+    {"name": "Peito de frango grelhado", "portion": 150, "kcal": 163, "protein": 31.0, "carbs": 0.0, "fat": 3.2},
+    {"name": "Carne bovina magra", "portion": 150, "kcal": 190, "protein": 27.0, "carbs": 0.0, "fat": 9.0},
+    {"name": "Ovo de galinha", "portion": 50, "kcal": 143, "protein": 13.0, "carbs": 1.5, "fat": 9.5},
+    {"name": "Feijão carioca cozido", "portion": 140, "kcal": 76, "protein": 4.8, "carbs": 13.6, "fat": 0.5},
+    {"name": "Leite integral", "portion": 200, "kcal": 64, "protein": 3.2, "carbs": 4.8, "fat": 3.5},
+    {"name": "Café preto s/ açúcar", "portion": 200, "kcal": 2, "protein": 0.1, "carbs": 0.3, "fat": 0.0},
+    {"name": "Queijo mussarela", "portion": 30, "kcal": 280, "protein": 22.0, "carbs": 3.0, "fat": 21.0},
+    {"name": "Aveia em flocos", "portion": 40, "kcal": 394, "protein": 13.9, "carbs": 66.6, "fat": 8.1},
+    {"name": "Batata doce cozida", "portion": 150, "kcal": 77, "protein": 0.9, "carbs": 18.4, "fat": 0.1},
+    {"name": "Batata inglesa cozida", "portion": 150, "kcal": 82, "protein": 1.9, "carbs": 18.1, "fat": 0.1},
+    {"name": "Whey protein", "portion": 30, "kcal": 380, "protein": 78.0, "carbs": 8.0, "fat": 4.0},
+    {"name": "Salada verde c/ tomate", "portion": 120, "kcal": 25, "protein": 1.2, "carbs": 4.6, "fat": 0.2},
+    {"name": "Macarrão cozido", "portion": 160, "kcal": 158, "protein": 5.4, "carbs": 31.0, "fat": 0.7},
+    {"name": "Peixe grelhado", "portion": 150, "kcal": 165, "protein": 26.0, "carbs": 0.0, "fat": 6.0},
+    {"name": "Tapioca", "portion": 60, "kcal": 240, "protein": 0.4, "carbs": 58.0, "fat": 0.2},
+    {"name": "Cappuccino c/ leite", "portion": 240, "kcal": 65, "protein": 3.4, "carbs": 6.4, "fat": 2.8},
+    {"name": "Pizza mussarela", "portion": 120, "kcal": 260, "protein": 11.0, "carbs": 30.0, "fat": 10.0},
+    {"name": "Chocolate ao leite", "portion": 30, "kcal": 535, "protein": 7.6, "carbs": 59.0, "fat": 30.0},
+    {"name": "Castanhas/nozes", "portion": 30, "kcal": 600, "protein": 18.0, "carbs": 12.0, "fat": 54.0},
+    {"name": "Mel", "portion": 20, "kcal": 304, "protein": 0.3, "carbs": 82.0, "fat": 0.0},
+    {"name": "Manteiga de amendoim", "portion": 30, "kcal": 590, "protein": 24.0, "carbs": 20.0, "fat": 48.0},
+]
 CURATED = [
     {"name": "Francesinha", "category": "prato", "portion": 400, "kcal": 220, "protein": 12, "carbs": 14, "fat": 13},
     {"name": "Pastel de nata", "category": "doçaria", "portion": 65, "kcal": 297, "protein": 6, "carbs": 33, "fat": 15},
@@ -77,6 +110,11 @@ CURATED = [
     {"name": "Café", "category": "bebida", "portion": 40, "kcal": 2, "protein": 0.2, "carbs": 0.3, "fat": 0},
     {"name": "Café com leite", "category": "bebida", "portion": 150, "kcal": 44, "protein": 2.6, "carbs": 4, "fat": 2.2},
     {"name": "Chá", "category": "bebida", "portion": 200, "kcal": 1, "protein": 0, "carbs": 0.2, "fat": 0},
+    {"name": "Geleia de morango", "category": "compotas", "portion": 20, "kcal": 250, "protein": 0.3, "carbs": 61, "fat": 0.1},
+    {"name": "Geleia", "category": "compotas", "portion": 20, "kcal": 250, "protein": 0.3, "carbs": 61, "fat": 0.1},
+    {"name": "Compota", "category": "compotas", "portion": 20, "kcal": 230, "protein": 0.4, "carbs": 56, "fat": 0.1},
+    {"name": "Pão de forma", "category": "pão", "portion": 30, "kcal": 260, "protein": 9, "carbs": 50, "fat": 3},
+    {"name": "Pão integral", "category": "pão", "portion": 30, "kcal": 240, "protein": 10, "carbs": 42, "fat": 3.5},
 ]
 
 
@@ -181,7 +219,7 @@ def run_off(done: set[str], budget_end: float, args) -> None:
 
 
 def merge() -> None:
-    from app.services.food_db import FOODS as CURRENT
+    CURRENT = GENERIC_BASE
 
     foods: dict[str, dict] = {}
     for f in CURRENT:

@@ -77,6 +77,19 @@ def tok_match(q: str, f: str) -> bool:
     )
 
 
+def _query_idf(q: str) -> float:
+    entries, idf = _index()
+    best = 0.0
+    for _, toks, _ in entries:
+        for t in toks:
+            if tok_match(q, t):
+                w = idf(t)
+                if w > best:
+                    best = w
+    n = len(entries) or 1
+    return best or math.log(1 + n)
+
+
 @lru_cache(maxsize=1)
 def _index():
     foods = json.loads(FOODS_PATH.read_text(encoding="utf-8"))
@@ -96,24 +109,35 @@ def _index():
     return entries, idf
 
 
-def _match_food(query_toks: list[str]):
+def _best_candidate(query_toks):
+    """Melhor alimento para os tokens; devolve (food, waste) ou None.
+    waste = fração do peso informativo (idf) que o match não cobre."""
     entries, idf = _index()
-    best, best_score, best_matched = None, 0.0, 0
+    best, best_score = None, 0.0
+    best_matched_idf, best_head = 0.0, False
     for f, toks, brand_toks in entries:
         score = 0.0
-        matched = 0
+        matched_idf, matched, head = 0.0, 0, False
         for q in query_toks:
             for t in toks:
                 if tok_match(q, t):
                     score += idf(t) * (1.3 if t in brand_toks else 1)
+                    matched_idf += idf(t)
                     matched += 1
+                    if q == query_toks[0]:
+                        head = True
                     break
         if matched:
             score += (matched / len(toks)) * 0.8
+            if head:
+                score *= 1.5  # o head da query é prioridade
             if score > best_score:
-                best, best_score, best_matched = f, score, matched
-    need = max(1, math.ceil(len(query_toks) * 0.75))
-    return best if best and best_matched >= need else None
+                best, best_score = f, score
+                best_matched_idf, best_head = matched_idf, head
+    if best is None or not best_head:
+        return None
+    total = sum(_query_idf(q) for q in query_toks) or 1.0
+    return best, (total - best_matched_idf) / total
 
 
 def _parse_qty_unit(tokens: list[str]):
@@ -147,21 +171,36 @@ def _parse_segment(segment: str):
     if not tokens:
         return [], []
     qty, unit_grams, rest = _parse_qty_unit(tokens)
-    query_toks = [t for t in (stem(norm(t)) for t in rest) if t and t not in STOP and len(t) > 1]
+    toks = [t for t in (stem(norm(t)) for t in rest) if t and t not in STOP and len(t) > 1]
+    # 'sem X' é negação: sai da query de match
+    query_toks, skip = [], False
+    for t in toks:
+        if t == "sem":
+            skip = True
+            continue
+        if skip:
+            skip = False
+            continue
+        query_toks.append(t)
     if not query_toks:
         return [], []
-    food = _match_food(query_toks)
-    if food:
+
+    cand = _best_candidate(query_toks)
+
+    def as_item(food):
         if unit_grams and qty is not None:
             grams = unit_grams * qty
         elif unit_grams:
             grams = unit_grams
         else:
             grams = (food.get("portion") or 100) * (qty or 1)
-        grams = round(grams)
         brand = food.get("brand", "")
         label = f"{food['name']} ({brand})" if brand else food["name"]
-        return [(food, grams, label)], []
+        return [(food, round(grams), label)], []
+
+    # match "limpo" (sobra <=30% do peso) -> 1 alimento; senão divide
+    if cand is not None and cand[1] <= 0.3:
+        return as_item(cand[0])
     if re.search(r"\s(com|e)\s", segment):
         items, unknown = [], []
         for part in re.split(r"\s+com\s+|\s+e\s+", segment):
@@ -170,6 +209,8 @@ def _parse_segment(segment: str):
             unknown.extend(b)
         if items:
             return items, unknown
+    if cand is not None:
+        return as_item(cand[0])
     return [], [t for t in rest if norm(t) not in STOP and len(t) > 2]
 
 

@@ -95,45 +95,111 @@ export function buildIndex(foods) {
   });
   const N = entries.length || 1;
   const idf = (t) => Math.log(1 + N / (1 + (df.get(t) || 0)));
-  INDEX = { entries, idf };
+  INDEX = { entries, idf, df, N };
   return INDEX;
 }
 
-function scorePhrase(queryToks, idf) {
+/* idf "efetivo" de um token da query: o melhor token da base que casa
+   (tokens desconhecidos ficam com o idf máximo — pesam contra o match) */
+function queryIdf(q) {
+  let best = 0;
+  for (const t of INDEX.df.keys()) {
+    if (tokMatch(q, t)) best = Math.max(best, INDEX.idf(t));
+  }
+  return best || Math.log(1 + INDEX.N);
+}
+
+function scorePhrase(queryToks) {
   let best = null;
   let bestScore = 0;
+  let bestMatchedIdf = 0;
   let bestMatched = 0;
+  let bestHead = false;
   for (const { f, toks, brandToks } of INDEX.entries) {
     let score = 0;
     let matched = 0;
+    let matchedIdf = 0;
+    let head = false;
     for (const q of queryToks) {
       for (const t of toks) {
         if (tokMatch(q, t)) {
-          score += idf(t) * (brandToks.has(t) ? 1.3 : 1);
+          const w = INDEX.idf(t) * (brandToks.has(t) ? 1.3 : 1);
+          score += w;
+          matchedIdf += INDEX.idf(t);
           matched++;
+          if (q === queryToks[0]) head = true;
           break;
         }
       }
     }
     if (matched) score += (matched / toks.size) * 0.8;
+    if (head) score *= 1.5; // o head da query é prioridade
     if (score > bestScore) {
       bestScore = score;
       best = f;
+      bestMatchedIdf = matchedIdf;
       bestMatched = matched;
+      bestHead = head;
     }
   }
-  return { food: best, score: bestScore, matched: bestMatched };
+  return { food: best, score: bestScore, matchedIdf: bestMatchedIdf, matched: bestMatched, head: bestHead };
 }
 
-/* melhor alimento para uma frase; exige cobertura alta dos tokens */
-function matchFood(queryToksRaw) {
-  const { idf } = INDEX;
-  const queryToks = queryToksRaw.filter(Boolean);
+/* tira 'sem X' (negação) e calcula o candidato do segmento */
+function bestCandidate(queryToksRaw) {
+  const raw = queryToksRaw.filter(Boolean);
+  const queryToks = [];
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] === "sem") {
+      i++;
+      continue;
+    }
+    queryToks.push(raw[i]);
+  }
   if (!queryToks.length) return null;
-  const { food, matched } = scorePhrase(queryToks, idf);
-  const need = Math.max(1, Math.ceil(queryToks.length * 0.75));
-  if (food && matched >= need) return food;
-  return null;
+  const total = queryToks.reduce((s, q) => s + queryIdf(q), 0) || 1;
+  const { food, matchedIdf, head } = scorePhrase(queryToks);
+  if (!food || !head) return null;
+  return { food, waste: (total - matchedIdf) / total };
+}
+
+function parseSegment(segment) {
+  const tokens = segment.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return { items: [], unknown: [] };
+  const { qty, unitGrams, rest } = parseQtyUnit(tokens);
+  const queryToks = toQueryToks(rest);
+  if (!queryToks.length) return { items: [], unknown: [] };
+
+  const cand = bestCandidate(queryToks);
+  const asItem = (food) => {
+    let grams;
+    if (unitGrams && qty !== null) grams = unitGrams * qty;
+    else if (unitGrams) grams = unitGrams;
+    else grams = (food.portion || 100) * (qty || 1);
+    return {
+      items: [{ food, grams: Math.round(grams), label: food.brand && food.brand !== "Meu registo" ? `${food.name} (${food.brand})` : food.name }],
+      unknown: [],
+    };
+  };
+
+  // match "limpo": o head casou e sobra pouco peso informativo -> 1 alimento
+  if (cand && cand.waste <= 0.3) return asItem(cand.food);
+
+  // senão: dividir em " com " / " e " e tentar cada parte
+  if (/\s(?:com|e)\s/.test(segment)) {
+    const parts = segment.split(/\s+com\s+|\s+e\s+/);
+    const out = { items: [], unknown: [] };
+    for (const p of parts) {
+      const r = parseSegment(p.trim());
+      out.items.push(...r.items);
+      out.unknown.push(...r.unknown);
+    }
+    if (out.items.length) return out;
+  }
+
+  // sem separadores: aceita o melhor match com head casado (parcial)
+  if (cand) return asItem(cand.food);
+  return { items: [], unknown: rest.filter((t) => !STOP.has(norm(t)) && t.length > 2) };
 }
 
 /* extrai qty/unidade do início dos tokens; devolve {qty, grams, rest} */
@@ -178,38 +244,6 @@ function parseQtyUnit(tokens) {
 
 const toQueryToks = (tokens) =>
   tokens.map((t) => stem(norm(t))).filter((t) => t && !STOP.has(t) && t.length > 1);
-
-function parseSegment(segment) {
-  const tokens = segment.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!tokens.length) return { items: [], unknown: [] };
-  const { qty, unitGrams, rest } = parseQtyUnit(tokens);
-  const queryToks = toQueryToks(rest);
-  if (!queryToks.length) return { items: [], unknown: [] };
-
-  const food = matchFood(queryToks);
-  if (food) {
-    let grams;
-    if (unitGrams && qty !== null) grams = unitGrams * qty;
-    else if (unitGrams) grams = unitGrams;
-    else grams = (food.portion || 100) * (qty || 1);
-    return {
-      items: [{ food, grams: Math.round(grams), label: food.brand ? `${food.name} (${food.brand})` : food.name }],
-      unknown: [],
-    };
-  }
-  // sem match no segmento inteiro: dividir em " com " / " e " e tentar de novo
-  if (/\s(?:com|e)\s/.test(segment)) {
-    const parts = segment.split(/\s+com\s+|\s+e\s+/);
-    const out = { items: [], unknown: [] };
-    for (const p of parts) {
-      const r = parseSegment(p.trim());
-      out.items.push(...r.items);
-      out.unknown.push(...r.unknown);
-    }
-    if (out.items.length) return out;
-  }
-  return { items: [], unknown: rest.filter((t) => !STOP.has(norm(t)) && t.length > 2) };
-}
 
 let _lastFoodsRef = null;
 

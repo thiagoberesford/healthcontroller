@@ -174,6 +174,11 @@ def import_foods(conn) -> int:
         # limpeza: só escrita latina (mantém acentos pt; remove Lidl internacional)
         if not _latin_ok(f["name"]) or len(f["name"]) < 3:
             continue
+        # sanidade nutricional (o OFF tem lixo: kcal em kJ mal rotulado, etc.)
+        if not (0 < f["kcal"] <= 900):
+            continue
+        if max(f.get("protein", 0) or 0, f.get("carbs", 0) or 0, f.get("fat", 0) or 0) > 100:
+            continue
         fid = f"{f['brand']}|{f['name']}".lower()[:120]
         if fid in seen:
             continue
@@ -197,6 +202,13 @@ def import_foods(conn) -> int:
             rows,
         )
     conn.commit()
+    # apagar lixo importado antes do filtro de sanidade
+    with conn.cursor() as cur:
+        cur.execute("delete from public.foods where kcal > 900 or kcal <= 0")
+        purged = cur.rowcount
+    conn.commit()
+    if purged:
+        print(f"foods: {purged} linhas absurdas removidas")
     return len(rows)
 
 
