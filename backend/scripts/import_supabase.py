@@ -158,6 +158,48 @@ def import_vo2max(conn) -> int:
     return len(rows)
 
 
+def _latin_ok(s: str) -> bool:
+    """Latim básico + acentos pt (exclui cirílico/grego/arabico...)."""
+    return all(ord(c) < 0x0370 for c in s)
+
+
+def import_foods(conn) -> int:
+    path = EXPORT_DIR.parent / "foods_pt.json"
+    if not path.exists():
+        return 0
+    foods = json.loads(path.read_text(encoding="utf-8"))
+    rows = []
+    seen = set()
+    for f in foods:
+        # limpeza: só escrita latina (mantém acentos pt; remove Lidl internacional)
+        if not _latin_ok(f["name"]) or len(f["name"]) < 3:
+            continue
+        fid = f"{f['brand']}|{f['name']}".lower()[:120]
+        if fid in seen:
+            continue
+        seen.add(fid)
+        rows.append(
+            (fid, f["name"][:80], f.get("brand", ""), f.get("category", ""),
+             f["kcal"], f["protein"], f["carbs"], f["fat"], f["portion"], f["source"])
+        )
+    with conn.cursor() as cur:
+        cur.executemany(
+            """
+            insert into public.foods
+                (id, name, brand, category, kcal, protein, carbs, fat, portion, source)
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            on conflict (id) do update set
+                name = excluded.name, brand = excluded.brand,
+                category = excluded.category, kcal = excluded.kcal,
+                protein = excluded.protein, carbs = excluded.carbs,
+                fat = excluded.fat, portion = excluded.portion, source = excluded.source
+            """,
+            rows,
+        )
+    conn.commit()
+    return len(rows)
+
+
 def main() -> None:
     import os
 
@@ -189,6 +231,8 @@ def main() -> None:
         print(f"personal_records: {n5} linhas")
         n6 = import_vo2max(conn)
         print(f"vo2max: {n6} dias atualizados em daily")
+        n7 = import_foods(conn)
+        print(f"foods: {n7} linhas (upsert)")
         with conn.cursor() as cur:
             cur.execute("select count(*) from public.garmin_activities")
             print("total na tabela:", cur.fetchone()[0])

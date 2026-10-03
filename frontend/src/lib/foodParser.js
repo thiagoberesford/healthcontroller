@@ -1,5 +1,6 @@
-/* Parser de refeição em linguagem natural (pt-BR) — versão local (sem backend).
-   Espelha backend/app/services/food_db.py. */
+/* Parser de refeição em linguagem natural (pt-PT).
+   Base: foods do Supabase (1.5k+ produtos portugueses) via buildIndex;
+   fallback para a lista FOODS embutida se nada for passado. */
 
 export const FOODS = [
   { keys: ["iogurte grego", "grego"], name: "Iogurte grego", portion: 170, kcal: 97, protein: 9.0, carbs: 3.9, fat: 5.0 },
@@ -9,114 +10,198 @@ export const FOODS = [
   { keys: ["maçã", "maca"], name: "Maçã", portion: 180, kcal: 56, protein: 0.3, carbs: 14.2, fat: 0.2 },
   { keys: ["pão integral", "pao integral"], name: "Pão integral", portion: 30, kcal: 240, protein: 10.0, carbs: 42.0, fat: 3.5 },
   { keys: ["pão", "pao"], name: "Pão de forma", portion: 30, kcal: 260, protein: 9.0, carbs: 50.0, fat: 3.0 },
-  { keys: ["arroz integral"], name: "Arroz integral cozido", portion: 140, kcal: 124, protein: 2.6, carbs: 25.8, fat: 1.0 },
   { keys: ["arroz"], name: "Arroz branco cozido", portion: 140, kcal: 128, protein: 2.5, carbs: 28.0, fat: 0.2 },
   { keys: ["frango", "peito de frango"], name: "Peito de frango grelhado", portion: 150, kcal: 163, protein: 31.0, carbs: 0.0, fat: 3.2 },
-  { keys: ["carne", "patinho", "maminha", "bife"], name: "Carne bovina magra", portion: 150, kcal: 190, protein: 27.0, carbs: 0.0, fat: 9.0 },
+  { keys: ["bife", "carne"], name: "Carne bovina magra", portion: 150, kcal: 190, protein: 27.0, carbs: 0.0, fat: 9.0 },
   { keys: ["ovo", "ovos"], name: "Ovo de galinha", portion: 50, kcal: 143, protein: 13.0, carbs: 1.5, fat: 9.5 },
-  { keys: ["feijão", "feijao"], name: "Feijão carioca cozido", portion: 140, kcal: 76, protein: 4.8, carbs: 13.6, fat: 0.5 },
   { keys: ["leite"], name: "Leite integral", portion: 200, kcal: 64, protein: 3.2, carbs: 4.8, fat: 3.5 },
   { keys: ["café", "cafe"], name: "Café preto s/ açúcar", portion: 200, kcal: 2, protein: 0.1, carbs: 0.3, fat: 0.0 },
-  { keys: ["queijo", "mussarela"], name: "Queijo mussarela", portion: 30, kcal: 280, protein: 22.0, carbs: 3.0, fat: 21.0 },
+  { keys: ["queijo"], name: "Queijo flamengo", portion: 30, kcal: 330, protein: 24.0, carbs: 1.0, fat: 26.0 },
   { keys: ["aveia"], name: "Aveia em flocos", portion: 40, kcal: 394, protein: 13.9, carbs: 66.6, fat: 8.1 },
   { keys: ["batata doce"], name: "Batata doce cozida", portion: 150, kcal: 77, protein: 0.9, carbs: 18.4, fat: 0.1 },
-  { keys: ["batata"], name: "Batata inglesa cozida", portion: 150, kcal: 82, protein: 1.9, carbs: 18.1, fat: 0.1 },
-  { keys: ["whey", "proteína", "proteina"], name: "Whey protein", portion: 30, kcal: 380, protein: 78.0, carbs: 8.0, fat: 4.0 },
+  { keys: ["whey", "proteina"], name: "Whey protein", portion: 30, kcal: 380, protein: 78.0, carbs: 8.0, fat: 4.0 },
   { keys: ["salada", "alface", "tomate"], name: "Salada verde c/ tomate", portion: 120, kcal: 25, protein: 1.2, carbs: 4.6, fat: 0.2 },
-  { keys: ["macarrão", "macarrao", "espaguete", "massa"], name: "Macarrão cozido", portion: 160, kcal: 158, protein: 5.4, carbs: 31.0, fat: 0.7 },
-  { keys: ["peixe", "tilápia", "tilapia", "salmão", "salmao"], name: "Peixe grelhado", portion: 150, kcal: 165, protein: 26.0, carbs: 0.0, fat: 6.0 },
-  { keys: ["tapioca"], name: "Tapioca", portion: 60, kcal: 240, protein: 0.4, carbs: 58.0, fat: 0.2 },
-  { keys: ["cappuccino"], name: "Cappuccino c/ leite", portion: 240, kcal: 65, protein: 3.4, carbs: 6.4, fat: 2.8 },
-  { keys: ["pizza"], name: "Pizza mussarela", portion: 120, kcal: 260, protein: 11.0, carbs: 30.0, fat: 10.0 },
+  { keys: ["massa", "espaguete"], name: "Massa cozida", portion: 160, kcal: 158, protein: 5.4, carbs: 31.0, fat: 0.7 },
+  { keys: ["pizza"], name: "Pizza", portion: 120, kcal: 260, protein: 11.0, carbs: 30.0, fat: 10.0 },
   { keys: ["chocolate"], name: "Chocolate ao leite", portion: 30, kcal: 535, protein: 7.6, carbs: 59.0, fat: 30.0 },
-  { keys: ["castanha", "castanhas", "nozes", "amêndoa", "amendoa"], name: "Castanhas/nozes", portion: 30, kcal: 600, protein: 18.0, carbs: 12.0, fat: 54.0 },
   { keys: ["mel"], name: "Mel", portion: 20, kcal: 304, protein: 0.3, carbs: 82.0, fat: 0.0 },
-  { keys: ["manteiga de amendoim", "manteiga de amêndoa", "pasta de amendoim"], name: "Manteiga de amendoim", portion: 30, kcal: 590, protein: 24.0, carbs: 20.0, fat: 48.0 },
 ];
 
 const UNITS = [
   { keys: ["grama", "gramas", "g"], grams: 1 },
   { keys: ["colher de sopa", "colher"], grams: 15 },
-  { keys: ["colher de chá", "colherzinha"], grams: 5 },
+  { keys: ["colher de cha", "colherzinha"], grams: 5 },
   { keys: ["copo", "copos"], grams: 200 },
-  { keys: ["xicara", "xícara", "xicaras", "xícaras"], grams: 200 },
+  { keys: ["xicara"], grams: 200 },
   { keys: ["fatia", "fatias"], grams: 30 },
   { keys: ["scoops", "scoop"], grams: 30 },
   { keys: ["prato", "pratos"], grams: 150 },
 ];
 
 const NUM_WORDS = {
-  um: 1, uma: 1, dois: 2, duas: 2, tres: 3, três: 3, quatro: 4, cinco: 5,
+  um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5,
   meio: 0.5, meia: 0.5,
 };
 
-const STOP = new Set(["comi", "jantei", "almocei", "tomei", "bebi", "com", "e", "de", "no", "na", "o", "a", "um", "uma", "que"]);
+const STOP = new Set([
+  "comi", "jantei", "almoei", "almocei", "tomei", "bebi", "com", "e", "de", "do", "da",
+  "no", "na", "o", "a", "os", "as", "um", "uma", "que", "sabor", "sabores",
+]);
 
 export function norm(s) {
-  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // remove acentos ANTES de limpar pontuação (\w JS é ascii-only)
+    .replace(/[^\w\s]/g, " ")
+    .trim();
 }
 
-function findFood(phrase) {
-  const p = norm(phrase);
-  for (const f of FOODS) if (f.keys.some((k) => norm(k) === p)) return f;
-  const stripped = p.replace(/^(o|a|os|as|um|uma|de)\s+/, "");
-  for (const f of FOODS) if (f.keys.some((k) => norm(k) === stripped)) return f;
+const stem = (t) => (t.length > 3 && t.endsWith("s") ? t.slice(0, -1) : t);
+
+/* tokens ignoráveis dentro do nome do produto (iguais a STOP, "de", etc.) */
+const nameTokens = (s) =>
+  norm(s).split(/\s+/).map(stem).filter((t) => t && !STOP.has(t) && t.length > 1);
+
+const tokMatch = (q, f) =>
+  q === f || (q.length >= 4 && f.length >= 4 && Math.abs(q.length - f.length) <= 2 && (f.startsWith(q) || q.startsWith(f)));
+
+/* ---------- índice invertido com pesos (TF-IDF-ish) ---------- */
+let INDEX = null;
+
+export function buildIndex(foods) {
+  const list = foods && foods.length ? foods : FOODS.map((f) => ({ ...f, brand: "" }));
+  const df = new Map();
+  const entries = list.map((f) => {
+    const toks = new Set([...nameTokens(f.name), ...nameTokens(f.brand)]);
+    const brandToks = new Set(nameTokens(f.brand));
+    for (const t of toks) df.set(t, (df.get(t) || 0) + 1);
+    return { f, toks, brandToks };
+  });
+  const N = entries.length || 1;
+  const idf = (t) => Math.log(1 + N / (1 + (df.get(t) || 0)));
+  INDEX = { entries, idf };
+  return INDEX;
+}
+
+function scorePhrase(queryToks, idf) {
+  let best = null;
+  let bestScore = 0;
+  let bestMatched = 0;
+  for (const { f, toks, brandToks } of INDEX.entries) {
+    let score = 0;
+    let matched = 0;
+    for (const q of queryToks) {
+      for (const t of toks) {
+        if (tokMatch(q, t)) {
+          score += idf(t) * (brandToks.has(t) ? 1.3 : 1);
+          matched++;
+          break;
+        }
+      }
+    }
+    if (matched) score += (matched / toks.size) * 0.8;
+    if (score > bestScore) {
+      bestScore = score;
+      best = f;
+      bestMatched = matched;
+    }
+  }
+  return { food: best, score: bestScore, matched: bestMatched };
+}
+
+/* melhor alimento para uma frase; exige cobertura alta dos tokens */
+function matchFood(queryToksRaw) {
+  const { idf } = INDEX;
+  const queryToks = queryToksRaw.filter(Boolean);
+  if (!queryToks.length) return null;
+  const { food, matched } = scorePhrase(queryToks, idf);
+  const need = Math.max(1, Math.ceil(queryToks.length * 0.75));
+  if (food && matched >= need) return food;
   return null;
 }
 
-export function parseMealLocal(text) {
-  const tokens = text.toLowerCase().split(/[,;()]+|\s+/).map((t) => t.trim()).filter(Boolean);
+/* extrai qty/unidade do início dos tokens; devolve {qty, grams, rest} */
+function parseQtyUnit(tokens) {
+  let i = 0;
+  let qty = null;
+  let unitGrams = null;
+  const t0 = tokens[i];
+  if (t0 && /^\d+([.,]\d+)?(g|gr|kg|ml)$/.test(t0)) {
+    // quantidade fundida: "200g", "1kg", "150ml"
+    const n = parseFloat(t0.replace(",", "."));
+    const unit = t0.replace(/[\d.,]+/, "");
+    qty = 1;
+    unitGrams = unit === "kg" ? n * 1000 : n;
+    i++;
+  } else if (t0 && /^\d+([.,]\d+)?$/.test(t0)) {
+    qty = parseFloat(t0.replace(",", "."));
+    i++;
+  } else if (t0 && NUM_WORDS[norm(t0)] !== undefined) {
+    qty = NUM_WORDS[norm(t0)];
+    i++;
+  }
+  if (tokens[i] === "de") i++;
+  if (tokens[i]) {
+    const tokUnit = stem(norm(tokens[i]));
+    const unit = UNITS.find((u) => u.keys.some((k) => stem(norm(k)) === tokUnit));
+    if (unit) {
+      unitGrams = unit.grams;
+      i++;
+      if (tokens[i] === "de") i++;
+    }
+  }
+  return { qty, unitGrams, rest: tokens.slice(i) };
+}
+
+const toQueryToks = (tokens) =>
+  tokens.map((t) => stem(norm(t))).filter((t) => t && !STOP.has(t) && t.length > 1);
+
+function parseSegment(segment) {
+  const tokens = segment.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return { items: [], unknown: [] };
+  const { qty, unitGrams, rest } = parseQtyUnit(tokens);
+  const queryToks = toQueryToks(rest);
+  if (!queryToks.length) return { items: [], unknown: [] };
+
+  const food = matchFood(queryToks);
+  if (food) {
+    let grams;
+    if (unitGrams && qty !== null) grams = unitGrams * qty;
+    else if (unitGrams) grams = unitGrams;
+    else grams = (food.portion || 100) * (qty || 1);
+    return {
+      items: [{ food, grams: Math.round(grams), label: food.brand ? `${food.name} (${food.brand})` : food.name }],
+      unknown: [],
+    };
+  }
+  // sem match no segmento inteiro: dividir em " com " / " e " e tentar de novo
+  if (/\s(?:com|e)\s/.test(segment)) {
+    const parts = segment.split(/\s+com\s+|\s+e\s+/);
+    const out = { items: [], unknown: [] };
+    for (const p of parts) {
+      const r = parseSegment(p.trim());
+      out.items.push(...r.items);
+      out.unknown.push(...r.unknown);
+    }
+    if (out.items.length) return out;
+  }
+  return { items: [], unknown: rest.filter((t) => !STOP.has(norm(t)) && t.length > 2) };
+}
+
+export function parseMealLocal(text, foods) {
+  if (!INDEX || foods) buildIndex(foods);
+  const segments = text
+    .toLowerCase()
+    .split(/[,;()]+/)
+    .flatMap((s) => (s.trim() ? [s.trim()] : []))
+    .filter(Boolean);
   const items = [];
   const unknown = [];
-  let i = 0;
-
-  while (i < tokens.length) {
-    let qty = null;
-    const t0 = tokens[i];
-    if (t0 && /^\d+([.,]\d+)?$/.test(t0)) {
-      qty = parseFloat(t0.replace(",", "."));
-      i++;
-    } else if (t0 && NUM_WORDS[norm(t0)] !== undefined) {
-      qty = NUM_WORDS[norm(t0)];
-      i++;
-    }
-
-    let unitGrams = null;
-    if (tokens[i] === "de") i++;
-    if (tokens[i]) {
-      const tokUnit = norm(tokens[i]);
-      const unit = UNITS.find((u) => u.keys.some((k) => norm(k) === tokUnit));
-      if (unit) {
-        unitGrams = unit.grams;
-        i++;
-        if (tokens[i] === "de") i++;
-      }
-    }
-
-    let matched = null;
-    let consumed = 0;
-    for (let span = 3; span >= 1 && !matched; span--) {
-      const phrase = tokens.slice(i, i + span).join(" ");
-      if (!phrase) continue;
-      const f = findFood(phrase);
-      if (f) {
-        matched = f;
-        consumed = span;
-      }
-    }
-
-    if (matched) {
-      let grams;
-      if (unitGrams && qty !== null) grams = unitGrams * qty;
-      else if (unitGrams) grams = unitGrams;
-      else grams = matched.portion * (qty || 1);
-      items.push({ food: matched, grams: Math.round(grams), label: matched.name });
-      i += consumed;
-    } else {
-      const tok = tokens[i];
-      if (tok && !STOP.has(tok) && tok.length > 2) unknown.push(tok);
-      i++;
-    }
+  for (const seg of segments) {
+    const r = parseSegment(seg);
+    items.push(...r.items);
+    unknown.push(...r.unknown);
   }
   return { items, unknown };
 }

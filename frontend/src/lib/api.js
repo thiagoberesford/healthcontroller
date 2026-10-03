@@ -1,7 +1,6 @@
 /* Camada de dados: Supabase (se configurado/logado) > backend local > localStorage.
    Treinos/diários: activities/daily (multi-fonte). Refeições: meals. Corpo: body_metrics. */
 import { createClient } from "@supabase/supabase-js";
-import { parseMealLocal, computeTotals, macrosOf } from "./foodParser";
 
 export const API_BASE = import.meta.env.VITE_API_BASE || null;
 
@@ -97,10 +96,32 @@ export const api = {
         if (r.ok) return await r.json();
       } catch (e) {}
     }
-    const { items, unknown } = parseMealLocal(text);
+    const { parseMealLocal, macrosOf, computeTotals } = await import("./foodParser");
+    const foods = await this.listFoods();
+    const { items, unknown } = parseMealLocal(text, foods);
     const lite = items.map((p) => ({ label: p.label, grams: p.grams, ...macrosOf(p) }));
-    const t = computeTotals(items);
+    const t = items.length ? computeTotals(items) : { kcal: 0, protein: 0, carbs: 0, fat: 0 };
     return { items: lite, unknown, totals: { label: "Total", grams: 0, ...t } };
+  },
+
+  _foodsCache: null,
+
+  async listFoods() {
+    if (this._foodsCache) return this._foodsCache;
+    const sb = supabase();
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from("foods")
+          .select("name,brand,category,kcal,protein,carbs,fat,portion")
+          .limit(5000);
+        if (!error && data && data.length) {
+          this._foodsCache = data;
+          return data;
+        }
+      } catch (e) {}
+    }
+    return [];
   },
 
   async listMeals() {

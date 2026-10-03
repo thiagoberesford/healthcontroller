@@ -1,145 +1,178 @@
-"""Base de alimentos (valores por 100g, aproximados TACO/USDA) e parser pt-BR."""
+"""Parser de refeição em linguagem natural (pt-PT).
+
+Base: backend/data/foods_pt.json (2.2k alimentos: marcas PT do Open Food
+Facts + genéricos + curadoria). Algoritmo espelha frontend/src/lib/foodParser.js:
+segmentação + índice invertido TF-IDF-ish + cobertura de tokens >= 75%.
+"""
 from __future__ import annotations
 
+import json
+import math
 import re
 import unicodedata
+from functools import lru_cache
 
 from app.models import MealItem, MealParseResponse
 
-# keys: variações reconhecidas; portion: porção típica em gramas
-FOODS: list[dict] = [
-    {"keys": ["iogurte grego", "grego"], "name": "Iogurte grego", "portion": 170, "kcal": 97, "protein": 9.0, "carbs": 3.9, "fat": 5.0},
-    {"keys": ["iogurte"], "name": "Iogurte natural", "portion": 170, "kcal": 61, "protein": 3.5, "carbs": 4.7, "fat": 3.3},
-    {"keys": ["laranja"], "name": "Laranja", "portion": 180, "kcal": 47, "protein": 0.9, "carbs": 11.8, "fat": 0.1},
-    {"keys": ["banana"], "name": "Banana", "portion": 120, "kcal": 98, "protein": 1.3, "carbs": 23.4, "fat": 0.2},
-    {"keys": ["maca"], "name": "Maçã", "portion": 180, "kcal": 56, "protein": 0.3, "carbs": 14.2, "fat": 0.2},
-    {"keys": ["pao integral"], "name": "Pão integral", "portion": 30, "kcal": 240, "protein": 10.0, "carbs": 42.0, "fat": 3.5},
-    {"keys": ["pao"], "name": "Pão de forma", "portion": 30, "kcal": 260, "protein": 9.0, "carbs": 50.0, "fat": 3.0},
-    {"keys": ["arroz integral"], "name": "Arroz integral cozido", "portion": 140, "kcal": 124, "protein": 2.6, "carbs": 25.8, "fat": 1.0},
-    {"keys": ["arroz"], "name": "Arroz branco cozido", "portion": 140, "kcal": 128, "protein": 2.5, "carbs": 28.0, "fat": 0.2},
-    {"keys": ["frango", "peito de frango"], "name": "Peito de frango grelhado", "portion": 150, "kcal": 163, "protein": 31.0, "carbs": 0.0, "fat": 3.2},
-    {"keys": ["carne", "patinho", "bife"], "name": "Carne bovina magra", "portion": 150, "kcal": 190, "protein": 27.0, "carbs": 0.0, "fat": 9.0},
-    {"keys": ["ovo", "ovos"], "name": "Ovo de galinha", "portion": 50, "kcal": 143, "protein": 13.0, "carbs": 1.5, "fat": 9.5},
-    {"keys": ["feijao"], "name": "Feijão carioca cozido", "portion": 140, "kcal": 76, "protein": 4.8, "carbs": 13.6, "fat": 0.5},
-    {"keys": ["leite"], "name": "Leite integral", "portion": 200, "kcal": 64, "protein": 3.2, "carbs": 4.8, "fat": 3.5},
-    {"keys": ["cafe"], "name": "Café preto s/ açúcar", "portion": 200, "kcal": 2, "protein": 0.1, "carbs": 0.3, "fat": 0.0},
-    {"keys": ["queijo", "mussarela"], "name": "Queijo mussarela", "portion": 30, "kcal": 280, "protein": 22.0, "carbs": 3.0, "fat": 21.0},
-    {"keys": ["aveia"], "name": "Aveia em flocos", "portion": 40, "kcal": 394, "protein": 13.9, "carbs": 66.6, "fat": 8.1},
-    {"keys": ["batata doce"], "name": "Batata doce cozida", "portion": 150, "kcal": 77, "protein": 0.9, "carbs": 18.4, "fat": 0.1},
-    {"keys": ["batata"], "name": "Batata inglesa cozida", "portion": 150, "kcal": 82, "protein": 1.9, "carbs": 18.1, "fat": 0.1},
-    {"keys": ["whey", "proteina"], "name": "Whey protein", "portion": 30, "kcal": 380, "protein": 78.0, "carbs": 8.0, "fat": 4.0},
-    {"keys": ["salada", "alface", "tomate"], "name": "Salada verde c/ tomate", "portion": 120, "kcal": 25, "protein": 1.2, "carbs": 4.6, "fat": 0.2},
-    {"keys": ["macarrao", "espaguete", "massa"], "name": "Macarrão cozido", "portion": 160, "kcal": 158, "protein": 5.4, "carbs": 31.0, "fat": 0.7},
-    {"keys": ["peixe", "tilapia", "salmao"], "name": "Peixe grelhado", "portion": 150, "kcal": 165, "protein": 26.0, "carbs": 0.0, "fat": 6.0},
-    {"keys": ["tapioca"], "name": "Tapioca", "portion": 60, "kcal": 240, "protein": 0.4, "carbs": 58.0, "fat": 0.2},
-    {"keys": ["cappuccino"], "name": "Cappuccino c/ leite", "portion": 240, "kcal": 65, "protein": 3.4, "carbs": 6.4, "fat": 2.8},
-    {"keys": ["pizza"], "name": "Pizza mussarela", "portion": 120, "kcal": 260, "protein": 11.0, "carbs": 30.0, "fat": 10.0},
-    {"keys": ["chocolate"], "name": "Chocolate ao leite", "portion": 30, "kcal": 535, "protein": 7.6, "carbs": 59.0, "fat": 30.0},
-    {"keys": ["castanha", "nozes", "amendoa"], "name": "Castanhas/nozes", "portion": 30, "kcal": 600, "protein": 18.0, "carbs": 12.0, "fat": 54.0},
-    {"keys": ["mel"], "name": "Mel", "portion": 20, "kcal": 304, "protein": 0.3, "carbs": 82.0, "fat": 0.0},
-    {"keys": ["manteiga de amendoim"], "name": "Manteiga de amendoim", "portion": 30, "kcal": 590, "protein": 24.0, "carbs": 20.0, "fat": 48.0},
-]
+FOODS_PATH = __import__("pathlib").Path(__file__).resolve().parent.parent.parent / "data" / "foods_pt.json"
 
 UNITS = [
-    {"keys": ["grama", "gramas", "g"], "grams": 1},
-    {"keys": ["colher de sopa", "colher"], "grams": 15},
-    {"keys": ["colher de cha", "colherzinha"], "grams": 5},
-    {"keys": ["copo", "copos"], "grams": 200},
-    {"keys": ["xicara", "xicaras"], "grams": 200},
-    {"keys": ["fatia", "fatias"], "grams": 30},
-    {"keys": ["scoop", "scoops"], "grams": 30},
-    {"keys": ["prato", "pratos"], "grams": 150},
+    ({"grama", "gramas", "g"}, 1),
+    ({"colher de sopa", "colher"}, 15),
+    ({"colher de cha", "colherzinha"}, 5),
+    ({"copo", "copos"}, 200),
+    ({"xicara"}, 200),
+    ({"fatia", "fatias"}, 30),
+    ({"scoop", "scoops"}, 30),
+    ({"prato", "pratos"}, 150),
 ]
+UNIT_LOOKUP = {}
+for keys, grams in UNITS:
+    for k in keys:
+        UNIT_LOOKUP[k] = grams
 
-NUM_WORDS = {
-    "um": 1, "uma": 1, "dois": 2, "duas": 2, "tres": 3, "quatro": 4, "cinco": 5,
-    "meio": 0.5, "meia": 0.5,
+NUM_WORDS = {"um": 1, "uma": 1, "dois": 2, "duas": 2, "tres": 3, "quatro": 4, "cinco": 5, "meio": 0.5, "meia": 0.5}
+
+STOP = {
+    "comi", "jantei", "almoei", "almocei", "tomei", "bebi", "com", "e", "de", "do", "da",
+    "no", "na", "o", "a", "os", "as", "um", "uma", "que", "sabor", "sabores",
 }
-
-STOP = {"comi", "jantei", "almocei", "tomei", "bebi", "com", "e", "de", "no", "na", "o", "a", "um", "uma", "que"}
 
 
 def norm(s: str) -> str:
-    return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode().strip().lower()
+    s = unicodedata.normalize("NFD", (s or "").lower())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"[^\w\s]", " ", s).strip()
 
 
-def _find_food(phrase: str):
-    for food in FOODS:
-        for key in food["keys"]:
-            if norm(key) == norm(phrase):
-                return food
-    # tolera artigos: "o pao" -> "pao"
-    stripped = re.sub(r"^(o|a|os|as|um|uma|de)\s+", "", norm(phrase))
-    for food in FOODS:
-        for key in food["keys"]:
-            if norm(key) == stripped:
-                return food
-    return None
+def stem(t: str) -> str:
+    return t[:-1] if len(t) > 3 and t.endswith("s") else t
+
+
+def name_tokens(s: str) -> set[str]:
+    return {stem(t) for t in norm(s).split() if t and t not in STOP and len(t) > 1}
+
+
+def tok_match(q: str, f: str) -> bool:
+    return q == f or (
+        len(q) >= 4 and len(f) >= 4 and abs(len(q) - len(f)) <= 2 and (f.startswith(q) or q.startswith(f))
+    )
+
+
+@lru_cache(maxsize=1)
+def _index():
+    foods = json.loads(FOODS_PATH.read_text(encoding="utf-8"))
+    entries = []
+    df: dict[str, int] = {}
+    for f in foods:
+        toks = name_tokens(f["name"]) | name_tokens(f.get("brand", ""))
+        brand_toks = name_tokens(f.get("brand", ""))
+        for t in toks:
+            df[t] = df.get(t, 0) + 1
+        entries.append((f, toks, brand_toks))
+    n = len(entries) or 1
+
+    def idf(t: str) -> float:
+        return math.log(1 + n / (1 + df.get(t, 0)))
+
+    return entries, idf
+
+
+def _match_food(query_toks: list[str]):
+    entries, idf = _index()
+    best, best_score, best_matched = None, 0.0, 0
+    for f, toks, brand_toks in entries:
+        score = 0.0
+        matched = 0
+        for q in query_toks:
+            for t in toks:
+                if tok_match(q, t):
+                    score += idf(t) * (1.3 if t in brand_toks else 1)
+                    matched += 1
+                    break
+        if matched:
+            score += (matched / len(toks)) * 0.8
+            if score > best_score:
+                best, best_score, best_matched = f, score, matched
+    need = max(1, math.ceil(len(query_toks) * 0.75))
+    return best if best and best_matched >= need else None
+
+
+def _parse_qty_unit(tokens: list[str]):
+    i, qty, unit_grams = 0, None, None
+    t0 = tokens[0] if tokens else None
+    m = re.fullmatch(r"(\d+(?:[.,]\d+)?)(g|gr|kg|ml)", t0 or "")
+    if m:
+        n = float(m.group(1).replace(",", "."))
+        qty, unit_grams = 1, n * 1000 if m.group(2) == "kg" else n
+        i = 1
+    elif t0 and re.fullmatch(r"\d+([.,]\d+)?", t0):
+        qty = float(t0.replace(",", "."))
+        i = 1
+    elif t0 and norm(t0) in NUM_WORDS:
+        qty = NUM_WORDS[norm(t0)]
+        i = 1
+    if i < len(tokens) and tokens[i] == "de":
+        i += 1
+    if i < len(tokens):
+        unit = UNIT_LOOKUP.get(stem(norm(tokens[i])))
+        if unit:
+            unit_grams = unit
+            i += 1
+            if i < len(tokens) and tokens[i] == "de":
+                i += 1
+    return qty, unit_grams, tokens[i:]
+
+
+def _parse_segment(segment: str):
+    tokens = [t for t in segment.split() if t]
+    if not tokens:
+        return [], []
+    qty, unit_grams, rest = _parse_qty_unit(tokens)
+    query_toks = [t for t in (stem(norm(t)) for t in rest) if t and t not in STOP and len(t) > 1]
+    if not query_toks:
+        return [], []
+    food = _match_food(query_toks)
+    if food:
+        if unit_grams and qty is not None:
+            grams = unit_grams * qty
+        elif unit_grams:
+            grams = unit_grams
+        else:
+            grams = (food.get("portion") or 100) * (qty or 1)
+        grams = round(grams)
+        brand = food.get("brand", "")
+        label = f"{food['name']} ({brand})" if brand else food["name"]
+        return [(food, grams, label)], []
+    if re.search(r"\s(com|e)\s", segment):
+        items, unknown = [], []
+        for part in re.split(r"\s+com\s+|\s+e\s+", segment):
+            a, b = _parse_segment(part.strip())
+            items.extend(a)
+            unknown.extend(b)
+        if items:
+            return items, unknown
+    return [], [t for t in rest if norm(t) not in STOP and len(t) > 2]
 
 
 def parse_meal(text: str) -> MealParseResponse:
-    tokens = [t for t in re.split(r"[,;()]+|\s+", text.lower()) if t]
+    segments = [s.strip() for s in re.split(r"[,;()]+", text.lower()) if s.strip()]
     items: list[MealItem] = []
     unknown: list[str] = []
-    i = 0
-    while i < len(tokens):
-        qty = None
-        t0 = tokens[i]
-        if re.fullmatch(r"\d+([.,]\d+)?", t0):
-            qty = float(t0.replace(",", "."))
-            i += 1
-        elif norm(t0) in NUM_WORDS:
-            qty = NUM_WORDS[norm(t0)]
-            i += 1
-
-        unit_grams = None
-        if i < len(tokens) and tokens[i] == "de":
-            i += 1
-        if i < len(tokens):
-            tok_unit = norm(tokens[i])
-            for u in UNITS:
-                if tok_unit in {norm(k) for k in u["keys"]}:
-                    unit_grams = u["grams"]
-                    i += 1
-                    if i < len(tokens) and tokens[i] == "de":
-                        i += 1
-                    break
-
-        matched = None
-        consumed = 0
-        for span in (3, 2, 1):
-            if i + span > len(tokens):
-                continue
-            phrase = " ".join(tokens[i : i + span])
-            f = _find_food(phrase)
-            if f:
-                matched, consumed = f, span
-                break
-
-        if matched:
-            if unit_grams and qty is not None:
-                grams = unit_grams * qty
-            elif unit_grams:
-                grams = float(unit_grams)
-            else:
-                grams = float(matched["portion"]) * (qty or 1)
-            grams = round(grams)
+    for seg in segments:
+        found, unk = _parse_segment(seg)
+        for food, grams, label in found:
             items.append(
                 MealItem(
-                    label=matched["name"],
+                    label=label,
                     grams=grams,
-                    kcal=round(matched["kcal"] * grams / 100),
-                    protein=round(matched["protein"] * grams / 100, 1),
-                    carbs=round(matched["carbs"] * grams / 100, 1),
-                    fat=round(matched["fat"] * grams / 100, 1),
+                    kcal=round(food["kcal"] * grams / 100),
+                    protein=round(food["protein"] * grams / 100, 1),
+                    carbs=round(food["carbs"] * grams / 100, 1),
+                    fat=round(food["fat"] * grams / 100, 1),
                 )
             )
-            i += consumed
-        else:
-            tok = tokens[i]
-            if norm(tok) not in STOP and len(tok) > 2:
-                unknown.append(tok)
-            i += 1
+        unknown.extend(unk)
 
     totals = None
     if items:
