@@ -130,12 +130,12 @@ def import_body(conn) -> int:
         cur.executemany(
             """
             insert into public.body_metrics
-                (date, weight, muscle, body_fat, water, visceral, source)
+                (date, weight, muscle, body_fat, water, visceral_fat, source)
             values (%s, %s, %s, %s, %s, %s, %s)
             on conflict (date) do update set
                 weight = excluded.weight, muscle = excluded.muscle,
                 body_fat = excluded.body_fat, water = excluded.water,
-                visceral = excluded.visceral
+                visceral_fat = excluded.visceral_fat
             """,
             rows,
         )
