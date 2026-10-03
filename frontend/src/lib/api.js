@@ -102,7 +102,7 @@ export const api = {
     const { parseMealLocal, macrosOf, computeTotals, matchFoodLabel } = await import("./foodParser");
     const foods = await this.listFoods();
 
-    // 1) determinista: produtos exatos da base (grátis)
+    // NL = sempre o LLM; determinista é só fallback
     const det = parseMealLocal(text, foods);
     const wrap = (items, unknown) => {
       const lite = items.map((p) => ({
@@ -116,9 +116,8 @@ export const api = {
         : { kcal: 0, protein: 0, carbs: 0, fat: 0 };
       return { items: lite, unknown, totals: { label: "Total", grams: 0, ...t } };
     };
-    if (det.items.length && det.unknown.length === 0) return wrap(det.items, []);
 
-    // 2) LLM (edge function Mistral) — item a item ancorado à base
+    // 1) LLM (edge function Mistral) — item a item ancorado à base
     const sb = supabase();
     if (sb) {
       try {
@@ -153,7 +152,7 @@ export const api = {
       } catch (e) {}
     }
 
-    // 3) fallback: backend local (dev) ou o que o determinista apanhou
+    // 2) fallback: backend local (dev) ou o que o determinista apanhou
     if (this.mode === "backend" && !det.items.length) {
       try {
         const r = await fetch(`${API_BASE || ""}/api/parse-meal`, {
