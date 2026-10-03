@@ -20,11 +20,12 @@ export default function OverviewTab({ meals }) {
   const [daily, setDaily] = useState(null);
   const [recent, setRecent] = useState([]);
 
+  /* dados "ao vivo": carregar + refrescar a cada 60s e quando o
+     separador volta a ficar visível (o sync do Mac corre à hora) */
   useEffect(() => {
-    (async () => {
+    let alive = true;
+    const load = async () => {
       const today = new Date();
-      /* janela larga: os últimos 14 dias com dados reais (ex.: Garmin
-         termina 21/08) */
       const start = addDays(dateKey(today), -90);
       const list = await api.listGarminDaily(start, dateKey(today));
       const mapped = list
@@ -41,10 +42,20 @@ export default function OverviewTab({ meals }) {
           intenseMin: d.intense_min,
           caloriesBurned: d.total_kcal,
         }));
+      if (!alive) return;
       setDaily(mapped.slice(-14));
       const acts = await api.listGarminActivities();
-      setRecent(acts.slice(0, 5));
-    })();
+      if (alive) setRecent(acts.slice(0, 5));
+    };
+    load();
+    const interval = setInterval(load, 60_000);
+    const onVisible = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   const last = daily && daily.length ? daily[daily.length - 1] : null;
