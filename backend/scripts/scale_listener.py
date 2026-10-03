@@ -51,17 +51,17 @@ SCALE_SEX = os.getenv("SCALE_SEX", "male")  # male | female
 
 LOG_PATH = Path(__file__).resolve().parent.parent / "data" / "scale_log.jsonl"
 SERVICE_181D = "181d"
-NAME_HINTS = ("mibcs", "mi body", "mi body composition")
+SERVICE_181B = "181b"  # confirmado com anúncio real (MIBFS)
+NAME_HINTS = ("mibfs", "mibcs", "mi body", "mi body composition")
 APPLE_COMPANY = 76  # 0x004C — macOS embrulha service data aqui (tipo 0x10)
 
 
 def extract_scale_data(adv) -> bytes | None:
-    """Service data 0x181D do anúncio. No macOS vem embrulhado no
-    manufacturer data Apple: 10 05 1d 18 <payload 13B>."""
+    """Service data 0x181B/0x181D do anúncio. No macOS pode vir embrulhado
+    no manufacturer data Apple: 10 .. 1d 18 <payload 13B>."""
     for uuid, data in (adv.service_data or {}).items():
         u = uuid.lower()
-        # full: 0000181d-0000-... | abreviado: 181d
-        if u == SERVICE_181D or u[4:8] == SERVICE_181D:
+        if u in (SERVICE_181B, SERVICE_181D) or u[4:8] in (SERVICE_181B, SERVICE_181D):
             return bytes(data)
     for company, md in (adv.manufacturer_data or {}).items():
         if int(company) != APPLE_COMPANY:
@@ -72,7 +72,7 @@ def extract_scale_data(adv) -> bytes | None:
             if b[i] != 0x10:
                 i += 1
                 continue
-            if b[i + 2 : i + 4] == b"\x1d\x18":  # 0x181D little-endian
+            if b[i + 2 : i + 4] in (b"\x1d\x18", b"\x1b\x18"):
                 # payload do Mi Scale 2 = 13 bytes fixos; se o campo de
                 # tamanho (n-2) fizer sentido, respeita-o
                 n = b[i + 1]
@@ -87,43 +87,52 @@ def extract_scale_data(adv) -> bytes | None:
 # ---------------- descodificação ----------------
 
 def decode_measurement(data: bytes) -> dict | None:
-    """Descodifica os 13 bytes do service data 0x181D. None se não é medição."""
+    """Descodifica os 13 bytes (formato confirmado com anúncio real MIBFS):
+
+      d[0]   ctrl0: bit0 = lbs, bit1 = catty (jin)
+      d[1]   ctrl1: bit5 = estabilizado; bit7 = anúncio final (peso
+             retirado) — é ESTE que queremos guardar
+      d[2:4] ano LE | d[4] mês | d[5] dia | d[6] hh | d[7] mm | d[8] ss
+      d[9:11] impedância LE (ohm)
+      d[11:13] peso LE (kg: raw/200; catty: raw/100*0.5; lbs: raw/100*0.4536)
+    """
     if len(data) < 13:
         return None
     d = data
     ctrl0, ctrl1 = d[0], d[1]
-    is_lbs = bool(ctrl0 & 0x01)
     stabilized = bool(ctrl1 & (1 << 5))
-    weight_removed = bool(ctrl1 & (1 << 7))
-    has_impedance = bool(ctrl1 & (1 << 1))
-    if not stabilized or weight_removed:
-        return None
+    if not stabilized:
+        return None  # medição em curso; esperar o anúncio final
 
-    raw_weight = d[2] | (d[3] << 8)
+    is_lbs = bool(ctrl0 & 0x01)
+    is_catty = bool(ctrl0 & 0x02)
+    weight_raw = d[11] | (d[12] << 8)
     if is_lbs:
-        weight_kg = round(raw_weight * 0.01 * 0.45359237, 1)  # 0.01 lb
+        weight = weight_raw * 0.01 * 0.45359237
+    elif is_catty:
+        weight = weight_raw * 0.01 * 0.5
     else:
-        weight_kg = round(raw_weight / 200.0, 1)  # unidade 5 g
+        weight = weight_raw / 200.0
+    weight_kg = round(weight, 2)
 
-    # timestamp da balança (se presente, bit4 do ctrl0)
     scale_time = None
-    if ctrl0 & 0x10:
-        try:
-            year = d[4] | (d[5] << 8)
-            if 2000 <= year <= 2100:
-                scale_time = f"{year:04d}-{d[6]:02d}-{d[7]:02d} {d[8]:02d}:{d[9]:02d}"
-        except Exception:
-            pass
+    try:
+        year = d[2] | (d[3] << 8)
+        if 2000 <= year <= 2100:
+            scale_time = f"{year:04d}-{d[4]:02d}-{d[5]:02d} {d[6]:02d}:{d[7]:02d}:{d[8]:02d}"
+    except Exception:
+        pass
 
-    impedance = None
-    if has_impedance and len(d) >= 12:
-        impedance = d[10] | (d[11] << 8)
+    impedance_raw = d[9] | (d[10] << 8)
+    impedance = impedance_raw if 100 <= impedance_raw <= 1000 else None
 
     return {
         "weight": weight_kg,
+        "weight_raw": weight_raw,
+        "units": "lbs" if is_lbs else ("catty" if is_catty else "kg"),
         "impedance": impedance,
-        "is_lbs": is_lbs,
         "stabilized": stabilized,
+        "final": bool(ctrl1 & (1 << 7)),
         "scale_time": scale_time,
         "raw": d.hex(),
     }
