@@ -1,5 +1,5 @@
 /* Camada de dados: Supabase (se configurado/logado) > backend local > localStorage.
-   Garmin/Suunto: garmin_activities/garmin_daily. Refeições: meals. Corpo: body_metrics. */
+   Treinos/diários: activities/daily (multi-fonte). Refeições: meals. Corpo: body_metrics. */
 import { createClient } from "@supabase/supabase-js";
 import { parseMealLocal, computeTotals, macrosOf } from "./foodParser";
 
@@ -264,7 +264,7 @@ export const api = {
     const sb = supabase();
     if (sb) {
       try {
-        let q = sb.from("garmin_activities").select("*").order("start", { ascending: false });
+        let q = sb.from("activities").select("*").order("start", { ascending: false });
         if (start) q = q.gte("start", `${start} 00:00:00`);
         if (end) q = q.lte("start", `${end} 23:59:59`);
         const { data, error } = await q;
@@ -285,12 +285,23 @@ export const api = {
     const sb = supabase();
     if (sb) {
       try {
-        let q = sb.from("garmin_daily").select("*").order("date", { ascending: true });
+        let q = sb.from("daily").select("*").order("date", { ascending: true });
         if (start) q = q.gte("date", start);
         if (end) q = q.lte("date", end);
         const { data, error } = await q;
-        if (!error) return data || [];
-      } catch (e) {}
+        if (error) throw error;
+        /* Um dia pode ter duas fontes (garmin + suunto); preferir suunto. */
+        const byDate = new Map();
+        for (const d of data || []) {
+          const prev = byDate.get(d.date);
+          if (!prev || (prev.source !== "suunto" && d.source === "suunto")) {
+            byDate.set(d.date, d);
+          }
+        }
+        return [...byDate.values()];
+      } catch (e) {
+        if (e && e.message) return [];
+      }
     }
     if (this.mode === "backend") {
       try {
@@ -306,7 +317,7 @@ export const api = {
     const sb = supabase();
     if (!sb) return false;
     try {
-      const { error } = await sb.from("garmin_daily").select("date").limit(1);
+      const { error } = await sb.from("daily").select("date").limit(1);
       return !error;
     } catch (e) {
       return false;

@@ -127,7 +127,7 @@ export default function OverviewTab({ meals }) {
           ) : (
             recent.map((a) => (
               <div
-                key={a.id}
+                key={a.source_key || a.id}
                 className="flex items-center justify-between rounded-lg px-3 py-2"
                 style={{ background: C.card2, border: `1px solid ${C.border}` }}
               >
