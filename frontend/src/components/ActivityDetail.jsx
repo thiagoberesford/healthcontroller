@@ -36,10 +36,14 @@ function MapCard({ polyline }) {
   useEffect(() => {
     if (!ref.current || !polyline?.length) return;
     const map = L.map(ref.current, { attributionControl: true });
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-      attribution: "© OpenStreetMap · © CARTO",
-      maxZoom: 19,
-    }).addTo(map);
+    L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+      { attribution: "© OpenStreetMap contributors · Esri, HERE, Garmin", maxZoom: 16 },
+    ).addTo(map);
+    L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 16 },
+    ).addTo(map);
     const line = L.polyline(polyline, { color: C.teal, weight: 3, opacity: 0.9 }).addTo(map);
     L.circleMarker(polyline[0], { radius: 5, color: C.green, fillColor: C.green, fillOpacity: 1 }).addTo(map);
     L.circleMarker(polyline[polyline.length - 1], { radius: 5, color: C.red, fillColor: C.red, fillOpacity: 1 }).addTo(map);
