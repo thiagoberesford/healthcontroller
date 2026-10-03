@@ -124,6 +124,34 @@ export const api = {
     return [];
   },
 
+  /* Alimento personalizado — fica na tabela foods (source='custom')
+     e passa a aparecer no autocomplete. */
+  async addFood(f) {
+    const sb = supabase();
+    if (!sb) return null;
+    const id = `custom|${f.name}`.toLowerCase().slice(0, 110);
+    const row = {
+      id,
+      name: f.name,
+      brand: f.brand || "Meu registo",
+      category: f.category || "personalizado",
+      kcal: f.kcal,
+      protein: f.protein || 0,
+      carbs: f.carbs || 0,
+      fat: f.fat || 0,
+      portion: f.portion || 100,
+      source: "custom",
+    };
+    try {
+      const { data, error } = await sb.from("foods").upsert(row).select().single();
+      if (error) return null;
+      this._foodsCache = null;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  },
+
   async listMeals() {
     const sb = supabase();
     if (sb) {

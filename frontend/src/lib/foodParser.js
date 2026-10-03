@@ -206,12 +206,21 @@ export function parseMealLocal(text, foods) {
   return { items, unknown };
 }
 
-export const macrosOf = (p) => ({
-  kcal: Math.round((p.food.kcal * p.grams) / 100),
-  protein: +((p.food.protein * p.grams) / 100).toFixed(1),
-  carbs: +((p.food.carbs * p.grams) / 100).toFixed(1),
-  fat: +((p.food.fat * p.grams) / 100).toFixed(1),
-});
+/* aceita {food, grams} (do matcher) ou items já com macros (lite) */
+export const macrosOf = (p) =>
+  p.food
+    ? {
+        kcal: Math.round((p.food.kcal * p.grams) / 100),
+        protein: +((p.food.protein * p.grams) / 100).toFixed(1),
+        carbs: +((p.food.carbs * p.grams) / 100).toFixed(1),
+        fat: +((p.food.fat * p.grams) / 100).toFixed(1),
+      }
+    : {
+        kcal: Math.round(p.kcal || 0),
+        protein: +(p.protein || 0).toFixed(1),
+        carbs: +(p.carbs || 0).toFixed(1),
+        fat: +(p.fat || 0).toFixed(1),
+      };
 
 export function computeTotals(items) {
   return items.reduce(
