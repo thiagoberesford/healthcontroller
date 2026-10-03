@@ -1,5 +1,5 @@
-/* Camada de API dupla: backend (se disponível) ou modo local (localStorage).
-   Dados Garmin: Supabase (se configurado) > backend > vazio. */
+/* Camada de dados: Supabase (se configurado/logado) > backend local > localStorage.
+   Garmin/Suunto: garmin_activities/garmin_daily. Refeições: meals. Corpo: body_metrics. */
 import { createClient } from "@supabase/supabase-js";
 import { parseMealLocal, computeTotals, macrosOf } from "./foodParser";
 
@@ -63,6 +63,9 @@ function saveLocal(db) {
   } catch (e) {}
 }
 
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const nowTime = () => new Date().toTimeString().slice(0, 5);
+
 export const api = {
   mode: "local",
 
@@ -80,6 +83,8 @@ export const api = {
     }
     return this.mode === "backend";
   },
+
+  // ---------------- nutrição ----------------
 
   async parseMeal(text) {
     if (this.mode === "backend") {
@@ -99,6 +104,18 @@ export const api = {
   },
 
   async listMeals() {
+    const sb = supabase();
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from("meals")
+          .select("id,date,time,text,items,totals")
+          .order("date", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(500);
+        if (!error) return data || [];
+      } catch (e) {}
+    }
     if (this.mode === "backend") {
       try {
         const r = await fetch(`${API_BASE || ""}/api/meals`);
@@ -109,7 +126,24 @@ export const api = {
   },
 
   async addMeal(text, items, time) {
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const totals = items ? computeTotals(items) : null;
+    const sb = supabase();
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from("meals")
+          .insert({
+            date: todayIso(),
+            time: time || nowTime(),
+            text,
+            items: items || [],
+            totals,
+          })
+          .select()
+          .single();
+        if (!error) return data;
+      } catch (e) {}
+    }
     if (this.mode === "backend") {
       try {
         const r = await fetch(`${API_BASE || ""}/api/meals`, {
@@ -123,11 +157,11 @@ export const api = {
     const db = loadLocal();
     const entry = {
       id: makeId(),
-      date: todayIso,
-      time: time || new Date().toTimeString().slice(0, 5),
+      date: todayIso(),
+      time: time || nowTime(),
       text,
       items,
-      totals: computeTotals(items),
+      totals,
     };
     db.meals.unshift(entry);
     saveLocal(db);
@@ -135,6 +169,13 @@ export const api = {
   },
 
   async deleteMeal(id) {
+    const sb = supabase();
+    if (sb) {
+      try {
+        const { error } = await sb.from("meals").delete().eq("id", id);
+        if (!error) return;
+      } catch (e) {}
+    }
     if (this.mode === "backend") {
       try {
         const r = await fetch(`${API_BASE || ""}/api/meals/${id}`, { method: "DELETE" });
@@ -145,6 +186,79 @@ export const api = {
     db.meals = db.meals.filter((m) => m.id !== id);
     saveLocal(db);
   },
+
+  // ---------------- corpo ----------------
+
+  async listBody() {
+    const sb = supabase();
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from("body_metrics")
+          .select("*")
+          .order("date", { ascending: true });
+        if (!error) return data || [];
+      } catch (e) {}
+    }
+    if (this.mode === "backend") {
+      try {
+        const r = await fetch(`${API_BASE || ""}/api/body`);
+        if (r.ok) return await r.json();
+      } catch (e) {}
+    }
+    return loadLocal().body.map((b) => ({
+      date: b.date,
+      weight: b.weight_kg,
+      muscle: b.muscle_kg,
+      body_fat: b.fat_pct,
+      source: b.source || "manual",
+    }));
+  },
+
+  async addBody(m) {
+    const row = {
+      date: todayIso(),
+      weight: m.weight_kg,
+      muscle: m.muscle_kg ?? null,
+      body_fat: m.fat_pct ?? null,
+      source: m.source || "manual",
+    };
+    const sb = supabase();
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from("body_metrics")
+          .upsert(row)
+          .select()
+          .single();
+        if (!error) return data;
+      } catch (e) {}
+    }
+    if (this.mode === "backend") {
+      try {
+        const r = await fetch(`${API_BASE || ""}/api/body`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(m),
+        });
+        if (r.ok) return await r.json();
+      } catch (e) {}
+    }
+    const db = loadLocal();
+    const entry = {
+      date: row.date,
+      weight_kg: row.weight,
+      muscle_kg: row.muscle,
+      fat_pct: row.body_fat,
+      source: row.source,
+    };
+    db.body.push(entry);
+    db.body.sort((a, b) => a.date.localeCompare(b.date));
+    saveLocal(db);
+    return entry;
+  },
+
+  // ---------------- treinos/diários (Garmin + Suunto) ----------------
 
   async listGarminActivities(start, end) {
     const sb = supabase();
@@ -199,38 +313,43 @@ export const api = {
     }
   },
 
-  async listBody() {
-    if (this.mode === "backend") {
-      try {
-        const r = await fetch(`${API_BASE || ""}/api/body`);
-        if (r.ok) return await r.json();
-      } catch (e) {}
-    }
-    return loadLocal().body;
-  },
+  // ---------------- migração única localStorage -> Supabase ----------------
 
-  async addBody(m) {
-    if (this.mode === "backend") {
-      try {
-        const r = await fetch(`${API_BASE || ""}/api/body`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(m),
-        });
-        if (r.ok) return await r.json();
-      } catch (e) {}
-    }
-    const db = loadLocal();
-    const entry = {
-      date: new Date().toISOString().slice(0, 10),
-      weight_kg: m.weight_kg,
-      muscle_kg: m.muscle_kg ?? null,
-      fat_pct: m.fat_pct ?? null,
-      source: m.source || "manual",
-    };
-    db.body.push(entry);
-    db.body.sort((a, b) => a.date.localeCompare(b.date));
-    saveLocal(db);
-    return entry;
+  async migrateLocalToSupabase() {
+    const sb = supabase();
+    if (!sb) return;
+    try {
+      if (localStorage.getItem("hc-sb-migrated")) return;
+      const db = loadLocal();
+      const { count: mealsCount } = await sb
+        .from("meals")
+        .select("id", { count: "exact", head: true });
+      if (!mealsCount && db.meals.length) {
+        for (const m of db.meals) {
+          await sb.from("meals").insert({
+            date: m.date,
+            time: m.time,
+            text: m.text,
+            items: m.items || [],
+            totals: m.totals || null,
+          });
+        }
+      }
+      const { count: bodyCount } = await sb
+        .from("body_metrics")
+        .select("date", { count: "exact", head: true });
+      if (!bodyCount && db.body.length) {
+        for (const b of db.body) {
+          await sb.from("body_metrics").upsert({
+            date: b.date,
+            weight: b.weight_kg,
+            muscle: b.muscle_kg ?? null,
+            body_fat: b.fat_pct ?? null,
+            source: b.source || "manual",
+          });
+        }
+      }
+      localStorage.setItem("hc-sb-migrated", "1");
+    } catch (e) {}
   },
 };

@@ -11,9 +11,10 @@ import {
 } from "recharts";
 import { Card, Ring } from "./ui.jsx";
 import { C, axisProps, tooltipStyle } from "../theme.js";
-import { todayIso } from "../lib/mock.js";
 import { api } from "../lib/api.js";
 import { addDays, dateKey, dayMonth } from "../lib/garmin.js";
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
 
 export default function NutritionTab({ meals, addMeal, removeMeal }) {
   const [input, setInput] = useState("");
@@ -41,7 +42,7 @@ export default function NutritionTab({ meals, addMeal, removeMeal }) {
     setPreview(null);
   };
 
-  const todayMeals = meals.filter((m) => m.date === todayIso);
+  const todayMeals = meals.filter((m) => m.date === todayIso());
   const todayTotals = todayMeals.reduce(
     (acc, m) => {
       const t = m.totals || m;

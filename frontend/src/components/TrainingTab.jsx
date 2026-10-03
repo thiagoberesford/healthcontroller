@@ -330,6 +330,14 @@ export default function TrainingTab() {
                       <div>
                         <div className="text-sm font-medium" style={{ color: C.text }}>
                           {a.name || TYPE_LABEL[a.type] || "Atividade"}
+                          {a.source === "suunto" && (
+                            <span
+                              className="ml-2 rounded-md px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase"
+                              style={{ background: C.card, color: C.orange }}
+                            >
+                              Suunto
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs" style={{ color: C.muted }}>
                           {fmtDate(a.start)} · {TYPE_LABEL[a.type] || a.type} · FC méd{" "}

@@ -23,7 +23,10 @@ export default function App() {
 
   useEffect(() => {
     if (!SUPABASE_ENABLED) return;
-    sbUser().then(setUser);
+    sbUser().then((u) => {
+      setUser(u);
+      if (u) api.migrateLocalToSupabase();
+    });
     return onSbAuthChange(setUser);
   }, []);
 
