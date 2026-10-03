@@ -3,28 +3,41 @@
 Decisão: dados novos a partir de 07/10/2026 vêm do Suunto, sincronizados para o
 Supabase com `source='suunto'` (histórico Garmin é imutável).
 
-## Vias de ingestão (pesquisa 2026-10-03)
+## Via escolhida: `suuntool` (CLI/MCP não-oficial, backend Sports-Tracker)
 
-| Via | O que é | Adequação |
-|---|---|---|
-| **API oficial Suunto** (apizone.suunto.com) | OAuth2, devolve **ficheiros FIT** das atividades; recentemente expandida com **sono, HRV e FC repouso dinâmica** (relógios modernos, ex. Suunto Race — confirmado pela integração da Tredict, que importa 2 anos de HRV/sono) | Preferível para o sync diário; exige registo de app OAuth no apizone |
-| **suuntool** (tajchert/suuntool, Go) | CLI + MCP não-oficial para a cloud API do Suunto app (backend Sports-Tracker) — o caminho "garminconnect-style" | Fallback se o OAuth oficial demorar; leitura/escrita dos próprios dados |
-| **suunto-mcp** (googlarz/suunto-mcp, Node) | MCP server para assistentes AI; tokens locais em `~/.suunto-mcp/tokens.json`; login via apizone; funciona com qualquer relógio que sincronize com o Suunto app | Útil para explorar dados interativamente antes de escrever o sync |
-| **open-wearables** (the-momentum, ~2.6k stars) | Plataforma self-hosted (Python/FastAPI) que unifica Garmin/Suunto/Apple Health com API própria | Overkill para este projeto; referência de mapeamento de campos |
+> **Atualização 2026-10-03:** a API oficial (apizone.suunto.com) **não está
+> disponível para uso pessoal** — Suunto só aceita parceiros. Confirmado com o
+> Suunto. A via oficial fica fora; seguimos com o cliente não-oficial, o mesmo
+> padrão do `garminconnect` (fala com o backend que o Suunto app usa).
 
-Fontes: blog.tredict.com (expansão da API: sono/HRV/RHR), apizone.suunto.com
-(documentação da API oficial), repositórios acima.
+Repositório: https://github.com/tajchert/suuntool (Go, binário estático, macOS/Linux)
+
+Instalação: `brew install --cask tajchert/tap/suuntool`
+
+Comandos relevantes para o sync:
+
+| Necessidade | Comando |
+|---|---|
+| Autenticar | `suuntool login --email ... --password-stdin` (sessão em `~/.config/suuntool/session.json`) |
+| Atividades | `suuntool workouts list --since 7d` (JSON/NDJSON, `--stream` pagina) |
+| Detalhe/FIT | `suuntool workouts get wk_...`, `workouts fit wk_... -o out.fit` |
+| Diário (passos) | `suuntool wellness activity --since 1d` (`.entryData.stepCount`, kcal etc.) |
+| Sono | `suuntool wellness sleep --since 7d` (qualidade, FC média, sestas) |
+| Recuperação | `suuntool wellness recovery`, `wellness sleepstages` |
+| Diagnóstico | `suuntool doctor` |
 
 ## Plano técnico
 
-1. **Teste de ligação** (conta já existe): instalar `suuntool` ou `suunto-mcp`,
-   autenticar com a conta suunto.com e enumerar endpoints disponíveis
-   (atividades, diário, sono/HRV se o relógio suportar).
+1. **Teste de ligação**: login com a conta suunto.com (sem dados ainda, conta
+   criada) → `suuntool doctor` + enumerar o que devolve `wellness activity` /
+   `sleep` para o relógio em causa.
 2. **`backend/scripts/suunto_sync.py`**:
+   - Invoca o `suuntool` (subprocess), parse NDJSON/JSON
    - Incremental: só dados com data > último registo `source='suunto'` no Supabase
    - Upsert idempotente em `garmin_activities`/`garmin_daily` com `source='suunto'`
-   - Mapear tipos Suunto → tipos existentes (running, strength_training, ...)
-   - Backoff em rate-limit (reutilizar `_retry` do `garmin_snapshot.py`)
+   - Mapear tipos Suunto (RUNNING, TRAIL_RUNNING, GYM…) → tipos existentes
+     (running, trail_running, strength_training, …)
+   - Backoff em rate-limit (reutilizar padrão `_retry` do `garmin_snapshot.py`)
 3. **Automação**: LaunchAgent macOS de manhã → `suunto_sync.py` → log em
    `backend/logs/` + notificação em falha.
 
@@ -33,3 +46,11 @@ Fontes: blog.tredict.com (expansão da API: sono/HRV/RHR), apizone.suunto.com
 - Nunca escrever em linhas `source='garmin'` após o congelamento (07/10/2026).
 - Datas Suunto < 07/10/2026 não são esperadas; se aparecerem, investigar antes
   de importar.
+- `suuntool` é não-oficial (pode violar os ToS do Suunto; uso pessoal e por
+  conta e risco — o mesmo espírito do garminconnect).
+
+## Alternativas (referência)
+
+- `suunto-mcp` (googlarz/suuntool-adjacente, Node) — MCP server para AI agents
+- `suunto-api-wrapper` (Marius-Ar, TypeScript) — cliente tipado do mesmo backend
+- `open-wearables` (the-momentum) — plataforma self-hosted multi-wearable (overkill)
