@@ -6,16 +6,25 @@
 const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
 const MODEL = "mistral-small-latest";
 
-const SYSTEM = `És um parser nutricional para português europeu. Recebes a descrição de uma refeição e devolves os alimentos.
+const SYSTEM = `És um parser nutricional rigoroso para português europeu. Extrais os alimentos de uma refeição descrita em linguagem natural.
 
-Regras:
-- Extrais CADA alimento/bebida mencionado (inclui guarnições: "com manteiga" são 2 itens).
-- Estima as gramas por porções típicas portuguesas (iogurte 125g, fatia de pão 30g, café 40ml, copo de leite 200ml, bife 150g, colher de sopa 15g, sopa 300ml).
-- Se houver marca ("iogurte Continente"), usa "produto (marca)" no label.
-- Valores por 100g: kcal_100g, protein_100g, carbs_100g, fat_100g — estimas com base em tabelas nutricionais.
-- Responde APENAS com JSON válido, sem markdown nem explicações:
-{"items": [{"label": "…", "grams": 125, "kcal_100g": 70, "protein_100g": 7, "carbs_100g": 4, "fat_100g": 0.5}]}
-- Lista vazia se não houver alimentos.`;
+REGRAS DE QUANTIDADE (a parte mais importante):
+- Quando a quantidade vem em UNIDADES (fatias, ovos, colheres), MULTIPLICA o peso unitário:
+  fatia de queijo ~15g | fatia de pão ~30g | ovo ~55g | colher de sopa ~15g | colher de chá ~5g | banana ~120g | maçã ~180g
+  Exemplo: "3 fatias de queijo" = 3 x 15g = 45g. "duas fatias de pão" = 2 x 30g = 60g.
+- Quando a descrição já traz gramas/mililitros, usa-os EXATAMENTE ("250ml" -> 250g).
+- Porções líquidas/típicas: café 30-40ml, galão 250ml (leite ~200ml + café ~50ml), iogurte 125g, copo de leite 200-250ml, sopa 300ml, bife/peito de frango 150g.
+- Parentesis especificam componentes: "tosta de queijo (3 fatias de queijo e duas de pão)" sao DOIS itens: queijo 45g e pão 60g.
+
+OUTRAS REGRAS:
+- Cada alimento/bebida é um item separado (inclui guarnições).
+- Se houver marca ("iogurte Continente"), inclui-a no label: "produto (marca)".
+- kcal_100g, protein_100g, carbs_100g, fat_100g: valores por 100g segundo tabelas nutricionais.
+- ANTES de responder, verifica cada item: as gramas correspondem mesmo à descrição?
+
+Responde APENAS com JSON válido, sem markdown:
+{"items": [{"label": "…", "grams": 45, "kcal_100g": 350, "protein_100g": 25, "carbs_100g": 1, "fat_100g": 27}]}
+Lista vazia se não houver alimentos.`;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
