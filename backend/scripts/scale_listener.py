@@ -48,6 +48,9 @@ DB_URL = os.getenv("SUPABASE_DB_URL", "")
 SCALE_AGE = int(os.getenv("SCALE_AGE", "36"))
 SCALE_HEIGHT_CM = int(os.getenv("SCALE_HEIGHT_CM", "180"))
 SCALE_SEX = os.getenv("SCALE_SEX", "male")  # male | female
+# 1: uma pesagem por dia e só com composição completa substitui um registo
+# completo; pesagens sem impedância ficam apenas no scale_log.jsonl
+SCALE_KEEP_COMPLETE = os.getenv("SCALE_KEEP_COMPLETE", "1") == "1"
 
 LOG_PATH = Path(__file__).resolve().parent.parent / "data" / "scale_log.jsonl"
 SERVICE_181D = "181d"
@@ -184,6 +187,22 @@ def save_to_supabase(entry: dict) -> None:
     )
     conn = retry(lambda: psycopg.connect(DB_URL))
     try:
+        # uma pesagem por dia: só substitui o registo se a nova trouxer
+        # composição completa (impedância) ou se a atual for incompleta
+        if SCALE_KEEP_COMPLETE and not comp.get("body_fat"):
+            with conn.cursor() as cur:
+                cur.execute(
+                    "select body_fat from public.body_metrics where date = %s",
+                    (day,),
+                )
+                existing = cur.fetchone()
+            if existing and existing[0] is not None:
+                print(
+                    f"  mantém registo de {day} com composição completa; "
+                    "pesagem sem impedância fica só no log",
+                    flush=True,
+                )
+                return
         upsert_body_rows(conn, [row], source="xiaomi")
         print(f"  Supabase OK: {day}", flush=True)
     finally:
@@ -199,6 +218,7 @@ class ScaleListener:
         self.dry_run = dry_run
         self.verbose = verbose
         self.seen_minutes: set[str] = set()
+        self.last_scale_time: str | None = None
         self.found_any = False
 
     def _handle(self, device, adv) -> None:
@@ -230,6 +250,12 @@ class ScaleListener:
             print("  duplicado no mesmo minuto — ignora", flush=True)
             return
         self.seen_minutes.add(minute_key)
+        # broadcasts repetidos da MESMA pesagem (janela ~15 min)
+        if m.get("scale_time") and m["scale_time"] == self.last_scale_time:
+            print("  mesma pesagem (re-broadcast) — ignora", flush=True)
+            return
+        if m.get("scale_time"):
+            self.last_scale_time = m["scale_time"]
 
         comp = compute_composition(m["weight"], m["impedance"])
         entry = {
