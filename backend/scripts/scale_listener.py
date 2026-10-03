@@ -52,6 +52,36 @@ SCALE_SEX = os.getenv("SCALE_SEX", "male")  # male | female
 LOG_PATH = Path(__file__).resolve().parent.parent / "data" / "scale_log.jsonl"
 SERVICE_181D = "181d"
 NAME_HINTS = ("mibcs", "mi body", "mi body composition")
+APPLE_COMPANY = 76  # 0x004C — macOS embrulha service data aqui (tipo 0x10)
+
+
+def extract_scale_data(adv) -> bytes | None:
+    """Service data 0x181D do anúncio. No macOS vem embrulhado no
+    manufacturer data Apple: 10 05 1d 18 <payload 13B>."""
+    for uuid, data in (adv.service_data or {}).items():
+        u = uuid.lower()
+        # full: 0000181d-0000-... | abreviado: 181d
+        if u == SERVICE_181D or u[4:8] == SERVICE_181D:
+            return bytes(data)
+    for company, md in (adv.manufacturer_data or {}).items():
+        if int(company) != APPLE_COMPANY:
+            continue
+        b = bytes(md)
+        i = 0
+        while i + 4 <= len(b):
+            if b[i] != 0x10:
+                i += 1
+                continue
+            if b[i + 2 : i + 4] == b"\x1d\x18":  # 0x181D little-endian
+                # payload do Mi Scale 2 = 13 bytes fixos; se o campo de
+                # tamanho (n-2) fizer sentido, respeita-o
+                n = b[i + 1]
+                plen = n - 2 if 15 <= n <= 20 else 13
+                payload = b[i + 4 : i + 4 + plen]
+                if len(payload) >= 13:
+                    return payload
+            i += 1
+    return None
 
 
 # ---------------- descodificação ----------------
@@ -154,28 +184,31 @@ def save_to_supabase(entry: dict) -> None:
 # ---------------- listener ----------------
 
 class ScaleListener:
-    def __init__(self, once: bool = False, duration: float = 60.0, dry_run: bool = False):
+    def __init__(self, once: bool = False, duration: float = 60.0, dry_run: bool = False, verbose: bool = False):
         self.once = once
         self.duration = duration
         self.dry_run = dry_run
+        self.verbose = verbose
         self.seen_minutes: set[str] = set()
         self.found_any = False
 
     def _handle(self, device, adv) -> None:
         name = (device.name or "").lower()
-        service_data = adv.service_data or {}
-        matched = None
-        for uuid, data in service_data.items():
-            if uuid[-8:-4].lower() == SERVICE_181D:
-                matched = data
-                break
-        if matched is None and not any(h in name for h in NAME_HINTS):
+        matched = extract_scale_data(adv)
+        interesting = matched is not None or any(h in name for h in NAME_HINTS)
+        if not interesting and not self.verbose:
+            return
+        if self.verbose:
+            md = {c: bytes(v).hex() for c, v in (adv.manufacturer_data or {}).items()}
+            sd = {u: bytes(v).hex() for u, v in (adv.service_data or {}).items()}
+            print(
+                f"  [adv] {(device.name or '?')[:32]:32} rssi={adv.rssi} md={md} sd={sd}",
+                flush=True,
+            )
+        if matched is None:
             return
         self.found_any = True
         print(f"[{datetime.now():%H:%M:%S}] {device.name or '?'} ({device.address})", flush=True)
-        if matched is None:
-            print(f"  sem service data 0x181D (adv: rssi={adv.rssi})", flush=True)
-            return
         print(f"  raw ({len(matched)}B): {matched.hex()}", flush=True)
         m = decode_measurement(bytes(matched))
         if not m:
@@ -232,7 +265,7 @@ class ScaleListener:
 
 
 async def main_async(args) -> None:
-    listener = ScaleListener(once=args.once, duration=args.duration, dry_run=args.dry_run)
+    listener = ScaleListener(once=args.once, duration=args.duration, dry_run=args.dry_run, verbose=args.verbose)
     if args.once:
         await listener.run()
         return
@@ -252,6 +285,7 @@ def main() -> None:
     ap.add_argument("--once", action="store_true", help="scan único e sai")
     ap.add_argument("--duration", type=float, default=60.0, help="segundos do scan (--once)")
     ap.add_argument("--dry-run", action="store_true", help="não escreve (log/Supabase)")
+    ap.add_argument("--verbose", action="store_true", help="imprime todos os anúncios BLE (diagnóstico)")
     args = ap.parse_args()
     try:
         asyncio.run(main_async(args))
