@@ -141,22 +141,76 @@ def decode_measurement(data: bytes) -> dict | None:
     }
 
 
-def compute_composition(weight: float, impedance: float | None) -> dict:
-    """openScale MiScale2: LBM -> gordura; água por impedância; IMC.
-    Constantes centralizadas — validar contra a app Mi Fitness na primeira
-    pesagem real (raw fica sempre no scale_log.jsonl para recalcular)."""
-    h = SCALE_HEIGHT_CM / 100.0
-    out = {"bmi": round(weight / (h * h), 1)}
+def compute_composition(weight: float, impedance) -> dict:
+    """Composição corporal — fórmulas oficiais do openScale (MiScaleLib.kt),
+    portadas de Kotlin: sex 1=male/0=female, altura cm, idade anos."""
+    sex = 1 if SCALE_SEX == "male" else 0
+    h, age = SCALE_HEIGHT_CM, SCALE_AGE
+    out = {"bmi": round(weight / ((h / 100) ** 2), 1)}
     if not impedance:
         return out
     z = float(impedance)
-    # openScale: lean body mass = (0.0062*h_cm² + 0.0041*Z² + 3414.73) / peso_kg
-    lbm = (0.0062 * SCALE_HEIGHT_CM**2 + 0.0041 * z * z + 3414.73) / weight
-    fat_pct = (1.0 - lbm / weight) * 100.0
-    if 2.0 <= fat_pct <= 70.0:
-        out["body_fat"] = round(fat_pct, 1)
-        out["muscle"] = round(lbm - 2.5, 1)  # LBM menos massa óssea estimada
-    out["water"] = round(min(max(100.0 - z * 0.0774, 30.0), 75.0), 1)
+
+    lbm_coeff = (h * 9.058 / 100) * (h / 100)
+    lbm_coeff += weight * 0.32 + 12.226
+    lbm_coeff -= z * 0.0068
+    lbm_coeff -= age * 0.0542
+
+    # gordura %
+    lbm_sub = 0.8
+    if sex == 0 and age <= 49:
+        lbm_sub = 9.25
+    elif sex == 0 and age > 49:
+        lbm_sub = 7.25
+    coeff = 1.0
+    if sex == 1 and weight < 61.0:
+        coeff = 0.98
+    elif sex == 0 and weight > 60.0:
+        coeff = 0.96
+        if h > 160.0:
+            coeff *= 1.03
+    elif sex == 0 and weight < 50.0:
+        coeff = 1.02
+        if h > 160.0:
+            coeff *= 1.03
+    body_fat = (1 - ((lbm_coeff - lbm_sub) * coeff) / weight) * 100
+    if body_fat > 63:
+        body_fat = 75.0
+    out["body_fat"] = round(body_fat, 1)
+
+    # água %
+    water = (100 - body_fat) * 0.7
+    water *= 1.02 if water < 50 else 0.98
+    out["water"] = round(water, 1)
+
+    # músculo: massa muscular esquelética (Janssen et al.), kg
+    smm = 0.401 * ((h * h) / z) + 3.825 * sex - 0.071 * age + 5.102
+    out["muscle"] = round(smm, 1)
+
+    # massa óssea kg
+    base = 0.245691014 if sex == 0 else 0.18016894
+    bone = -(base - lbm_coeff * 0.05158)
+    bone = bone + 0.1 if bone > 2.2 else bone - 0.1
+    out["bone_mass"] = round(bone, 1)
+
+    # gordura visceral
+    if sex == 0:
+        if weight > (13 - h * 0.5) * -1:
+            subsubcalc = (h * 1.45) + (h * 0.1158) * h - 120
+            subcalc = weight * 500 / subsubcalc
+            vf = (subcalc - 6) + age * 0.07
+        else:
+            subcalc = 0.691 + h * -0.0024 + h * -0.0024
+            vf = ((h * 0.027 - subcalc * weight) * -1) + age * 0.07 - age
+    else:
+        if h < weight * 1.6:
+            subcalc = ((h * 0.4) - (h * (h * 0.0826))) * -1
+            vf = (weight * 305) / (subcalc + 48) - 2.9 + age * 0.15
+        else:
+            subcalc = 0.765 + h * -0.0015
+            vf = ((h * 0.143 - weight * subcalc) * -1) + age * 0.15 - 5
+    out["visceral_fat"] = round(vf)
+
     return out
 
 
