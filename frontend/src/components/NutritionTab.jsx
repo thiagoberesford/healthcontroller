@@ -353,6 +353,16 @@ export default function NutritionTab({ meals, addMeal, removeMeal }) {
             ) : (
               <p className="text-sm" style={{ color: C.muted }}>Nenhum alimento reconhecido. Tenta: "1 iogurte, 1 banana, 2 fatias de pão integral".</p>
             )}
+            {!preview.items.length && preview.unknown?.length > 0 && (
+              <p className="mt-2 text-xs" style={{ color: C.muted }}>
+                Não reconhecido: {preview.unknown.join(", ")}
+              </p>
+            )}
+            {!preview.items.length && preview.llmError && (
+              <p className="mt-1 text-xs" style={{ color: C.orange }}>
+                LLM indisponível: {preview.llmError}
+              </p>
+            )}
           </div>
         )}
       </Card>

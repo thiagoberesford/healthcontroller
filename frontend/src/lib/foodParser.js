@@ -61,6 +61,7 @@ const NUM_WORDS = {
 const STOP = new Set([
   "comi", "jantei", "almoei", "almocei", "tomei", "bebi", "com", "e", "de", "do", "da",
   "no", "na", "o", "a", "os", "as", "um", "uma", "que", "sabor", "sabores",
+  "como", "repete", "repetir", "ex", "exemplo", "tenta", "por",
 ]);
 
 export function norm(s) {
