@@ -194,6 +194,10 @@ def compute_composition(weight: float, impedance) -> dict:
     out["bone_mass"] = round(bone, 1)
 
     # gordura visceral
+    # NOTA: o openScale usa o ramo A (305/…) só acima de weight*1.6>height;
+    # a pesos normais usa o ramo B, que dispara para valores altos (23 a
+    # 97.8kg) e NÃO bate com a app Mi (13). O ramo A bate com a app em
+    # pesos normais -> condição invertida por validação real do utilizador.
     if sex == 0:
         if weight > (13 - h * 0.5) * -1:
             subsubcalc = (h * 1.45) + (h * 0.1158) * h - 120
@@ -203,7 +207,7 @@ def compute_composition(weight: float, impedance) -> dict:
             subcalc = 0.691 + h * -0.0024 + h * -0.0024
             vf = ((h * 0.027 - subcalc * weight) * -1) + age * 0.07 - age
     else:
-        if h < weight * 1.6:
+        if h > weight * 1.6:
             subcalc = ((h * 0.4) - (h * (h * 0.0826))) * -1
             vf = (weight * 305) / (subcalc + 48) - 2.9 + age * 0.15
         else:
