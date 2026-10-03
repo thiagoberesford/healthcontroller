@@ -289,10 +289,21 @@ class ScaleListener:
         scanner = BleakScanner(detection_callback=self._handle)
         await scanner.start()
         try:
+            last_recycle = time.time()
             while True:
                 await asyncio.sleep(self.duration if self.once else 5)
                 if self.once:
                     break
+                # reciclar o scanner: o CoreBluetooth morre em silêncio
+                # (ex.: após o Mac adormecer) sem lançar erro
+                if time.time() - last_recycle > 600:
+                    try:
+                        await scanner.stop()
+                        await scanner.start()
+                        last_recycle = time.time()
+                    except Exception as e:
+                        print(f"reciclagem do scanner falhou ({e}); reinicio total", flush=True)
+                        raise
         finally:
             await scanner.stop()
         if self.once and not self.found_any:
