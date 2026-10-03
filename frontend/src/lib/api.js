@@ -130,12 +130,23 @@ export const api = {
           };
         }
         if (data?.items?.length) {
+          // ancoragem SÓ quando o utilizador escreveu a marca e o produto existe
+          const normS = (x) =>
+            (x || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const brandSet = [...new Set(foods.map((f) => normS(f.brand)).filter(Boolean))];
           const items = data.items.map((it) => {
-            const db = matchFoodLabel(it.label, foods);
-            if (db) {
-              return { food: db, grams: it.grams || db.portion || 100, label: db.brand ? `${db.name} (${db.brand})` : db.name };
+            const brand = brandSet.find((b) => b && normS(it.label).includes(b));
+            if (brand) {
+              const db = matchFoodLabel(it.label, foods);
+              if (db && normS(db.brand) === brand) {
+                return {
+                  food: db,
+                  grams: it.grams || db.portion || 100,
+                  label: db.brand ? `${db.name} (${db.brand})` : db.name,
+                };
+              }
             }
-            // sem match na base: estimativa do LLM
+            // sem marca / sem produto: estimativa pura do LLM
             const g = it.grams || 100;
             return {
               label: it.label,
