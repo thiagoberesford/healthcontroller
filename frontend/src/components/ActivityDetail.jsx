@@ -122,8 +122,9 @@ export default function ActivityDetail({ activity, onClose }) {
   }, [hrSeries]);
 
   const elevGain = splits.reduce((s, l) => s + (l.elev_gain || 0), 0);
-  const cadence = splits.length
-    ? Math.round(splits.reduce((s, l) => s + (l.cadence || 0), 0) / splits.filter((l) => l.cadence).length)
+  const cadenceParts = splits.filter((l) => l.cadence);
+  const cadence = cadenceParts.length
+    ? Math.round(cadenceParts.reduce((s, l) => s + l.cadence, 0) / cadenceParts.length)
     : null;
 
   const metrics = [

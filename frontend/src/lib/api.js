@@ -1,6 +1,7 @@
 /* Camada de dados: Supabase (se configurado/logado) > backend local > localStorage.
    Treinos/diários: activities/daily (multi-fonte). Refeições: meals. Corpo: body_metrics. */
 import { createClient } from "@supabase/supabase-js";
+import { computeTotals } from "./foodParser";
 
 export const API_BASE = import.meta.env.VITE_API_BASE || null;
 
@@ -62,7 +63,10 @@ function saveLocal(db) {
   } catch (e) {}
 }
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 const nowTime = () => new Date().toTimeString().slice(0, 5);
 
 export const api = {
@@ -252,7 +256,16 @@ export const api = {
     if (this.mode === "backend") {
       try {
         const r = await fetch(`${API_BASE || ""}/api/body`);
-        if (r.ok) return await r.json();
+        if (r.ok) {
+          const rows = await r.json();
+          return rows.map((b) => ({
+            date: b.date,
+            weight: b.weight_kg,
+            muscle: b.muscle_kg,
+            body_fat: b.fat_pct,
+            source: b.source || "manual",
+          }));
+        }
       } catch (e) {}
     }
     return loadLocal().body.map((b) => ({
@@ -288,7 +301,7 @@ export const api = {
         const r = await fetch(`${API_BASE || ""}/api/body`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(m),
+          body: JSON.stringify({ date: row.date, ...m }),
         });
         if (r.ok) return await r.json();
       } catch (e) {}
@@ -349,7 +362,7 @@ export const api = {
         }
         return [...byDate.values()];
       } catch (e) {
-        if (e && e.message) return [];
+        return [];
       }
     }
     if (this.mode === "backend") {

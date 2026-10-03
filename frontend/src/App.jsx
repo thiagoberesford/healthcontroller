@@ -36,7 +36,7 @@ export default function App() {
       setMode(api.mode);
       setMeals(await api.listMeals());
     })();
-  }, [refreshKey]);
+  }, [refreshKey, user]);
 
   if (SUPABASE_ENABLED && user === undefined) {
     return (

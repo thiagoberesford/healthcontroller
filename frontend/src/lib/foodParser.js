@@ -29,14 +29,29 @@ export const FOODS = [
 
 const UNITS = [
   { keys: ["grama", "gramas", "g"], grams: 1 },
-  { keys: ["colher de sopa", "colher"], grams: 15 },
-  { keys: ["colher de cha", "colherzinha"], grams: 5 },
+  { keys: ["colher"], grams: 15 }, // fallback genérico
+  { keys: ["colheres", "colherzinha", "colherzinhas"], grams: 15 },
   { keys: ["copo", "copos"], grams: 200 },
   { keys: ["xicara"], grams: 200 },
   { keys: ["fatia", "fatias"], grams: 30 },
   { keys: ["scoops", "scoop"], grams: 30 },
   { keys: ["prato", "pratos"], grams: 150 },
 ];
+
+/* unidades multi-palavra: "colher(es) de sopa" (15g), "colher(es) de chá" (5g) */
+function multiWordUnit(tokens, i) {
+  const t = stem(norm(tokens[i]));
+  if (t !== "colher" && t !== "colhere") return null;
+  const next1 = tokens[i + 1];
+  const next2 = tokens[i + 2];
+  if (next1 === "de" && next2) {
+    const n = norm(next2);
+    if (n === "sopa") return { grams: 15, consumed: 3 };
+    if (n === "cha" || n === "chá") return { grams: 5, consumed: 3 };
+    if (next1 === "de") return { grams: 15, consumed: 2 }; // "colher de arroz"
+  }
+  return { grams: 15, consumed: 1 };
+}
 
 const NUM_WORDS = {
   um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5,
@@ -143,12 +158,19 @@ function parseQtyUnit(tokens) {
   }
   if (tokens[i] === "de") i++;
   if (tokens[i]) {
-    const tokUnit = stem(norm(tokens[i]));
-    const unit = UNITS.find((u) => u.keys.some((k) => stem(norm(k)) === tokUnit));
-    if (unit) {
-      unitGrams = unit.grams;
-      i++;
+    const t = stem(norm(tokens[i]));
+    if (t === "colher" || t === "colhere" || t === "colherzinha" || t === "colherzinhas") {
+      const u = multiWordUnit(tokens, i);
+      unitGrams = u.grams;
+      i += u.consumed;
       if (tokens[i] === "de") i++;
+    } else {
+      const unit = UNITS.find((u) => u.keys.some((k) => stem(norm(k)) === t));
+      if (unit) {
+        unitGrams = unit.grams;
+        i++;
+        if (tokens[i] === "de") i++;
+      }
     }
   }
   return { qty, unitGrams, rest: tokens.slice(i) };
@@ -189,8 +211,14 @@ function parseSegment(segment) {
   return { items: [], unknown: rest.filter((t) => !STOP.has(norm(t)) && t.length > 2) };
 }
 
+let _lastFoodsRef = null;
+
 export function parseMealLocal(text, foods) {
-  if (!INDEX || foods) buildIndex(foods);
+  // só reconstrói o índice se a base mudou (evita rebuild de 2k alimentos a cada chamada)
+  if (!INDEX || foods !== _lastFoodsRef) {
+    buildIndex(foods);
+    _lastFoodsRef = foods || null;
+  }
   const segments = text
     .toLowerCase()
     .split(/[,;()]+/)

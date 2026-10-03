@@ -11,7 +11,7 @@ import {
 } from "recharts";
 import { Card, StatCard } from "./ui.jsx";
 import { C, axisProps, tooltipStyle, fmtTime } from "../theme.js";
-import { api } from "../lib/api.js";
+import { api, SUPABASE_ENABLED } from "../lib/api.js";
 import { RUN_TYPES, TYPE_LABEL, TYPE_COLOR, fmtDate, fmtKcal, fmtRecord } from "../lib/garmin.js";
 import ActivityDetail from "./ActivityDetail.jsx";
 
@@ -352,8 +352,8 @@ export default function TrainingTab() {
               <div className="py-6 text-center text-xs" style={{ color: C.muted }}>
                 {periodId === "custom" && (!custom.start || !custom.end)
                   ? "Selecione as duas datas (De / Até) para filtrar."
-                  : api.mode !== "backend"
-                  ? "Sem dados Garmin — ligue o backend (uvicorn) para carregar o histórico real."
+                  : !SUPABASE_ENABLED && api.mode !== "backend"
+                  ? "Sem fonte de dados — ligue o backend (uvicorn) ou configure o Supabase."
                   : "Sem atividades neste período."}
               </div>
             ) : (

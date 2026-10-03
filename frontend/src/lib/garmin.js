@@ -47,22 +47,21 @@ export const dayMonth = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 /* 223.7 -> "3:43.7" | 5828 -> "1:37:08" */
 export const fmtRecord = (s) => {
   if (!s && s !== 0) return "—";
-  const ms = Math.round((s % 1) * 10);
-  const total = Math.floor(s);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const sec = total % 60;
-  if (h) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-  return `${m}:${String(sec).padStart(2, "0")}${ms ? "." + ms : ""}`;
+  const total = Math.round(s * 10); // décimos com transporte
+  const ms = total % 10;
+  const sec = Math.floor(total / 10);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const ss = sec % 60;
+  if (h) return `${h}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+  return `${m}:${String(ss).padStart(2, "0")}${ms ? "." + ms : ""}`;
 };
 
-/* m/s -> "5:39/km"; s/km direto se negativo/zero tratado fora */
+/* m/s -> "5:39/km" */
 export const fmtPace = (speedMs) => {
   if (!speedMs || speedMs <= 0) return "—";
-  const secPerKm = 1000 / speedMs;
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
+  const tot = Math.round(1000 / speedMs); // arredonda o total antes de decompor
+  return `${Math.floor(tot / 60)}:${String(tot % 60).padStart(2, "0")}`;
 };
 
 export const fmtDuration = (s) => {

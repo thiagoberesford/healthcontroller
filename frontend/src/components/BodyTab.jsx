@@ -33,7 +33,7 @@ export default function BodyTab({ onSaved }) {
           muscle: b.muscle,
           fat: b.body_fat,
           water: b.water,
-          visceral: b.visceral,
+          visceral: b.visceral_fat,
           bmi: b.weight ? +(b.weight / (HEIGHT_M * HEIGHT_M)).toFixed(1) : null,
           source: b.source,
         })),
@@ -43,10 +43,16 @@ export default function BodyTab({ onSaved }) {
 
   useEffect(load, []);
 
+  const [formMsg, setFormMsg] = useState(null);
+
   const submit = async (e) => {
     e.preventDefault();
     const w = parseFloat(weight.replace(",", "."));
-    if (!w) return;
+    if (!w || Number.isNaN(w)) {
+      setFormMsg("Peso inválido — ex.: 97,5");
+      return;
+    }
+    setFormMsg(null);
     await api.addBody({
       weight_kg: w,
       muscle_kg: muscle ? parseFloat(muscle.replace(",", ".")) : null,
@@ -103,6 +109,7 @@ export default function BodyTab({ onSaved }) {
             Adicionar
           </button>
         </form>
+        {formMsg && <p className="mt-2 text-xs" style={{ color: C.red }}>{formMsg}</p>}
       </Card>
 
       {data && data.length > 1 && (

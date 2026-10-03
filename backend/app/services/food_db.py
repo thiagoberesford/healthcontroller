@@ -18,8 +18,8 @@ FOODS_PATH = __import__("pathlib").Path(__file__).resolve().parent.parent.parent
 
 UNITS = [
     ({"grama", "gramas", "g"}, 1),
-    ({"colher de sopa", "colher"}, 15),
-    ({"colher de cha", "colherzinha"}, 5),
+    ({"colher"}, 15),
+    ({"colheres", "colherzinha", "colherzinhas"}, 15),
     ({"copo", "copos"}, 200),
     ({"xicara"}, 200),
     ({"fatia", "fatias"}, 30),
@@ -30,6 +30,24 @@ UNIT_LOOKUP = {}
 for keys, grams in UNITS:
     for k in keys:
         UNIT_LOOKUP[k] = grams
+
+
+def _unit_grams(tokens: list[str], i: int) -> tuple[int | None, int]:
+    """Gramas da unidade em tokens[i] (suporta 'colher de sopa/cha')."""
+    t = stem(norm(tokens[i]))
+    if t in ("colher", "colhere", "colherzinha", "colherzinhas"):
+        # "colher de sopa" (15g) / "colher de cha" (5g)
+        if tokens[i + 1 : i + 2] == ["de"] and i + 2 < len(tokens):
+            n2 = norm(tokens[i + 2])
+            if n2 == "sopa":
+                return 15, 3
+            if n2 == "cha":
+                return 5, 3
+            if tokens[i + 1] == "de":
+                return 15, 2  # "colher de arroz"
+        return 15, 1
+    g = UNIT_LOOKUP.get(t)
+    return (g, 1) if g else (None, 0)
 
 NUM_WORDS = {"um": 1, "uma": 1, "dois": 2, "duas": 2, "tres": 3, "quatro": 4, "cinco": 5, "meio": 0.5, "meia": 0.5}
 
@@ -115,10 +133,10 @@ def _parse_qty_unit(tokens: list[str]):
     if i < len(tokens) and tokens[i] == "de":
         i += 1
     if i < len(tokens):
-        unit = UNIT_LOOKUP.get(stem(norm(tokens[i])))
+        unit, consumed = _unit_grams(tokens, i)
         if unit:
             unit_grams = unit
-            i += 1
+            i += consumed
             if i < len(tokens) and tokens[i] == "de":
                 i += 1
     return qty, unit_grams, tokens[i:]

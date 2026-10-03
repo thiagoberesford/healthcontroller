@@ -50,23 +50,27 @@ export default function OverviewTab({ meals }) {
   const last = daily && daily.length ? daily[daily.length - 1] : null;
   const series = daily || [];
   const lastVo2 = [...series].reverse().find((d) => d.vo2max);
-  const vo2Prev = lastVo2
-    ? [...series]
-        .filter((d) => d.vo2max && d.date < lastVo2.date)
-        .slice(-30)
-        .reduce((a, d) => d.vo2max, 0)
+  const prevVo2 = lastVo2
+    ? series.filter((d) => d.vo2max && d.date < lastVo2.date).slice(-30)
+    : [];
+  const vo2Prev = prevVo2.length
+    ? +(prevVo2.reduce((s, d) => s + d.vo2max, 0) / prevVo2.length).toFixed(0)
     : null;
-  const prevWeek = series.slice(0, 7);
-  const avg = (arr, key) =>
-    arr.length
-      ? +(arr.reduce((s, d) => s + (d[key] || 0), 0) / arr.filter((d) => d[key]).length).toFixed(0)
-      : "—";
+  const prevWeek = series.slice(-7);
+  const avg = (arr, key) => {
+    const vals = arr.filter((d) => d[key]);
+    return vals.length ? +(vals.reduce((s, d) => s + d[key], 0) / vals.length).toFixed(0) : "—";
+  };
 
   return (
     <div className="space-y-6">
-      {!last ? (
+      {daily === null ? (
         <Card className="p-8 text-center text-sm" style={{ color: C.muted }}>
           A carregar dados do Supabase… (se não aparecer, verifique VITE_SUPABASE_URL/ANON_KEY)
+        </Card>
+      ) : !last ? (
+        <Card className="p-8 text-center text-sm" style={{ color: C.muted }}>
+          Sem dados diários no Supabase — corra o import do snapshot.
         </Card>
       ) : (
       <Card className="p-6">
