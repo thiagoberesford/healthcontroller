@@ -104,45 +104,6 @@ def import_daily(conn) -> int:
     return len(daily)
 
 
-def import_body(conn) -> int:
-    """body_composition_*.json do snapshot -> body_metrics (source='garmin')."""
-    rows = []
-    for f in sorted(BODY_DIR.glob("body_composition_*.json")):
-        for e in json.loads(f.read_text()).get("dateWeightList", []):
-            if not e.get("calendarDate") or e.get("weight") is None:
-                continue
-            muscle = e.get("muscleMass")
-            muscle = round(muscle / 1000, 1) if muscle and muscle > 500 else muscle
-            rows.append(
-                (
-                    e["calendarDate"],
-                    round(e["weight"] / 1000, 1),
-                    muscle,
-                    e.get("bodyFat"),
-                    e.get("bodyWater"),
-                    e.get("visceralFat"),
-                    "garmin",
-                )
-            )
-    if not rows:
-        return 0
-    with conn.cursor() as cur:
-        cur.executemany(
-            """
-            insert into public.body_metrics
-                (date, weight, muscle, body_fat, water, visceral_fat, source)
-            values (%s, %s, %s, %s, %s, %s, %s)
-            on conflict (date) do update set
-                weight = excluded.weight, muscle = excluded.muscle,
-                body_fat = excluded.body_fat, water = excluded.water,
-                visceral_fat = excluded.visceral_fat
-            """,
-            rows,
-        )
-    conn.commit()
-    return len(rows)
-
-
 def import_details(conn) -> int:
     files = sorted((EXPORT_DIR / "details").glob("*.json"))
     for i in range(0, len(files), 50):
@@ -220,8 +181,8 @@ def main() -> None:
         print(f"garmin_activities: {n1} linhas (upsert)")
         n2 = import_daily(conn)
         print(f"garmin_daily: {n2} linhas (upsert)")
-        n3 = import_body(conn)
-        print(f"body_metrics: {n3} linhas (upsert, source='garmin')")
+        # body_metrics: sem import Garmin — controlo de peso começa 2026-10-03
+        # (balança Xiaomi via scale_listener.py; histórico removido a pedido)
         n4 = import_details(conn)
         print(f"activity_details: {n4} linhas (jsonb)")
         n5 = import_prs(conn)
