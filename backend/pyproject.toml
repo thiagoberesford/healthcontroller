@@ -10,6 +10,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "garminconnect==0.3.2",
     "psycopg[binary]>=3.2",
+    "bleak>=0.21",
 ]
 
 [project.optional-dependencies]
