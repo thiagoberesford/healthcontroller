@@ -18,6 +18,15 @@ const supabase = () => {
 
 export const SUPABASE_ENABLED = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 
+async function safeText(ctx) {
+  try {
+    const t = await ctx.text();
+    return t ? t.slice(0, 200) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function sbSignIn(email, password) {
   const sb = supabase();
   const { error } = await sb.auth.signInWithPassword({ email, password });
@@ -114,7 +123,14 @@ export const api = {
     if (sb) {
       try {
         const { data, error } = await sb.functions.invoke("parse-meal", { body: { text } });
-        if (!error && data?.items?.length) {
+        if (error) {
+          // deixar o erro chegar ao utilizador (não engolir)
+          return {
+            ...wrap(det.items, det.unknown),
+            llmError: (error.context ? await safeText(error.context) : null) || error.message || "chamada falhou",
+          };
+        }
+        if (data?.items?.length) {
           const items = data.items.map((it) => {
             const db = matchFoodLabel(it.label, foods);
             if (db) {

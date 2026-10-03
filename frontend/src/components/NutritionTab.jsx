@@ -341,6 +341,11 @@ export default function NutritionTab({ meals, addMeal, removeMeal }) {
                     Não reconhecido: {preview.unknown.join(", ")}
                   </p>
                 )}
+                {preview.llmError && (
+                  <p className="mt-1 text-xs" style={{ color: C.orange }}>
+                    LLM indisponível: {preview.llmError}
+                  </p>
+                )}
                 <button onClick={confirm} className="mt-3 w-full rounded-lg py-2 text-sm font-semibold" style={{ background: C.green, color: "#052e12" }}>
                   Confirmar refeição
                 </button>
