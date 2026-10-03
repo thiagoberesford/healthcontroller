@@ -176,6 +176,12 @@ export default function TrainingTab() {
     setPeriodId(id);
   };
 
+  const openPr = async (p) => {
+    if (!p.activity_key) return;
+    const act = await api.getActivity(p.source, String(p.activity_key));
+    if (act) setSelected(act);
+  };
+
   const title =
     periodId === "custom"
       ? `Treinos (${custom.start ? fmtDate(custom.start) : "…"} – ${custom.end ? fmtDate(custom.end) : "…"})`
@@ -290,8 +296,10 @@ export default function TrainingTab() {
                 {prs.map((p) => (
                   <div
                     key={p.label}
-                    className="rounded-xl p-3"
+                    onClick={() => openPr(p)}
+                    className="cursor-pointer rounded-xl p-3 transition-colors hover:brightness-125"
                     style={{ background: C.card2, border: `1px solid ${C.border}` }}
+                    title={p.activity_key ? "Ver atividade do recorde" : ""}
                   >
                     <div className="text-[10px] uppercase tracking-wide" style={{ color: C.muted }}>
                       {p.label}

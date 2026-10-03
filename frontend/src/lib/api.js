@@ -341,6 +341,23 @@ export const api = {
     }
   },
 
+  async getActivity(source, sourceKey) {
+    const sb = supabase();
+    if (!sb || !sourceKey) return null;
+    try {
+      const { data, error } = await sb
+        .from("activities")
+        .select("*")
+        .eq("source", source)
+        .eq("source_key", sourceKey)
+        .maybeSingle();
+      if (error) return null;
+      return data || null;
+    } catch (e) {
+      return null;
+    }
+  },
+
   async listPersonalRecords() {
     const sb = supabase();
     if (!sb) return [];
