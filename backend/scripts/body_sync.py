@@ -173,6 +173,28 @@ def retry(fn, tries: int = 3):
     raise last
 
 
+UPSERT_SQL = """
+    insert into public.body_metrics
+        (date, weight, body_fat, water, muscle, bone_mass,
+         visceral_fat, protein, bmi, source)
+    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    on conflict (date) do update set
+        weight = excluded.weight, body_fat = excluded.body_fat,
+        water = excluded.water, muscle = excluded.muscle,
+        bone_mass = excluded.bone_mass, visceral_fat = excluded.visceral_fat,
+        protein = excluded.protein, bmi = excluded.bmi, source = excluded.source
+    """
+
+
+def upsert_body_rows(conn, rows: list[tuple], source: str = "xiaomi") -> None:
+    """rows: (date_iso, weight, body_fat, water, muscle, bone_mass,
+    visceral_fat, protein, bmi). Partilhado com o scale_listener."""
+    payload = [tuple(r) + (source,) for r in rows]
+    with conn.cursor() as cur:
+        cur.executemany(UPSERT_SQL, payload)
+    conn.commit()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", default=os.getenv("BODY_EXPORT_PATH", ""), help="CSV/JSON do SmartScaleConnect")
@@ -231,28 +253,13 @@ def main() -> None:
                 m.get("visceral_fat"),
                 m.get("protein"),
                 m.get("bmi"),
-                "xiaomi",
             )
             for d, m in sorted(todo.items())
         ]
         if not rows:
             print("nada novo para importar")
             return
-        with conn.cursor() as cur:
-            cur.executemany(
-                """
-                insert into public.body_metrics
-                    (date, weight, body_fat, water, muscle, bone_mass,
-                     visceral_fat, protein, bmi, source)
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                on conflict (date) do update set
-                    weight = excluded.weight, body_fat = excluded.body_fat,
-                    water = excluded.water, muscle = excluded.muscle,
-                    bone_mass = excluded.bone_mass, visceral_fat = excluded.visceral_fat,
-                    protein = excluded.protein, bmi = excluded.bmi, source = excluded.source
-                """,
-                rows,
-            )
+        upsert_body_rows(conn, rows, source="xiaomi")
         print(f"BODY SYNC OK ({len(rows)} dias)")
 
 
