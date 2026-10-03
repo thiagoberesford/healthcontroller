@@ -26,30 +26,40 @@ Responde APENAS com JSON válido, sem markdown:
 {"items": [{"label": "…", "grams": 45, "kcal_100g": 350, "protein_100g": 25, "carbs_100g": 1, "fat_100g": 27}]}
 Lista vazia se não houver alimentos.`;
 
-function json(body: unknown, status = 200) {
+// só estas origens podem chamar a função (produção + dev local)
+const ALLOWED_ORIGINS = [
+  "https://thiagoberesford.github.io",
+  "http://localhost:5173",
+];
+
+function corsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin") ?? "";
+  if (!ALLOWED_ORIGINS.includes(origin)) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
+
+function json(body: unknown, req: Request, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+    headers: { "Content-Type": "application/json", ...corsHeaders(req) },
   });
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-      },
-    });
+    return new Response("ok", { headers: corsHeaders(req) });
   }
   const auth = req.headers.get("Authorization") ?? "";
   if (!auth.startsWith("Bearer ")) {
-    return json({ error: "não autenticado" }, 401);
+    return json({ error: "não autenticado" }, req, 401);
   }
   const key = Deno.env.get("MISTRAL_API_KEY");
   if (!key) {
-    return json({ error: "MISTRAL_API_KEY não configurado (Edge Function secrets)" }, 500);
+    return json({ error: "MISTRAL_API_KEY não configurado (Edge Function secrets)" }, req, 500);
   }
 
   let text = "";
@@ -57,9 +67,9 @@ Deno.serve(async (req) => {
     const body = await req.json();
     text = String(body?.text ?? "").slice(0, 500);
   } catch {
-    return json({ error: "body inválido" }, 400);
+    return json({ error: "body inválido" }, req, 400);
   }
-  if (!text.trim()) return json({ error: "texto em falta" }, 400);
+  if (!text.trim()) return json({ error: "texto em falta" }, req, 400);
 
   let mistral: Response;
   try {
@@ -80,11 +90,11 @@ Deno.serve(async (req) => {
       }),
     });
   } catch (e) {
-    return json({ error: `mistral indisponível: ${e}` }, 502);
+    return json({ error: `mistral indisponível: ${e}` }, req, 502);
   }
   if (!mistral.ok) {
     const detail = await mistral.text().catch(() => "");
-    return json({ error: `mistral ${mistral.status}: ${detail.slice(0, 200)}` }, 502);
+    return json({ error: `mistral ${mistral.status}: ${detail.slice(0, 200)}` }, req, 502);
   }
 
   const data = await mistral.json();
@@ -109,5 +119,5 @@ Deno.serve(async (req) => {
     fat_100g: Math.max(0, Number(it?.fat_100g) || 0),
   })).filter((it) => it.label && it.grams > 0);
 
-  return json({ items: clean });
+  return json({ items: clean }, req);
 });
