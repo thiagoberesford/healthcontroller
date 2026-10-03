@@ -324,6 +324,36 @@ export const api = {
     }
   },
 
+  async getActivityDetail(source, sourceKey) {
+    const sb = supabase();
+    if (!sb || !sourceKey) return null;
+    try {
+      const { data, error } = await sb
+        .from("activity_details")
+        .select("data")
+        .eq("source", source)
+        .eq("source_key", sourceKey)
+        .maybeSingle();
+      if (error) return null;
+      return data ? data.data : null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async listPersonalRecords() {
+    const sb = supabase();
+    if (!sb) return [];
+    try {
+      const { data, error } = await sb
+        .from("personal_records")
+        .select("*")
+        .order("value_s", { ascending: true });
+      if (!error) return data || [];
+    } catch (e) {}
+    return [];
+  },
+
   // ---------------- migração única localStorage -> Supabase ----------------
 
   async migrateLocalToSupabase() {

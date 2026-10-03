@@ -17,6 +17,8 @@ from psycopg.types.json import Jsonb
 from app.config import DATA_DIR
 from app.services.garmin_service import list_activities, list_daily
 
+EXPORT_DIR = DATA_DIR / "garmin_export"
+
 BATCH = 500
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent.parent / "supabase" / "migrations"
 BODY_DIR = DATA_DIR / "garmin_export"
@@ -141,6 +143,60 @@ def import_body(conn) -> int:
     return len(rows)
 
 
+def import_details(conn) -> int:
+    files = sorted((EXPORT_DIR / "details").glob("*.json"))
+    for i in range(0, len(files), 50):
+        rows = [(f"garmin", f.stem, f.read_text()) for f in files[i : i + 50]]
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                insert into public.activity_details (source, source_key, data)
+                values (%s, %s, %s::jsonb)
+                on conflict (source, source_key) do update set data = excluded.data
+                """,
+                rows,
+            )
+    conn.commit()
+    return len(files)
+
+
+def import_prs(conn) -> int:
+    path = EXPORT_DIR / "personal_records.json"
+    if not path.exists():
+        return 0
+    rows = [
+        (p["label"], p["value_s"], str(p.get("activity_id") or ""), p.get("date"))
+        for p in json.loads(path.read_text())
+    ]
+    with conn.cursor() as cur:
+        cur.executemany(
+            """
+            insert into public.personal_records (source, label, value_s, activity_key, date)
+            values ('garmin', %s, %s, %s, %s)
+            on conflict (source, label) do update set
+              value_s = excluded.value_s, activity_key = excluded.activity_key,
+              date = excluded.date
+            """,
+            rows,
+        )
+    conn.commit()
+    return len(rows)
+
+
+def import_vo2max(conn) -> int:
+    path = EXPORT_DIR / "vo2max.json"
+    if not path.exists():
+        return 0
+    rows = [(v["date"], int(v["vo2max"])) for v in json.loads(path.read_text())]
+    with conn.cursor() as cur:
+        cur.executemany(
+            "update public.daily set vo2max = %s where date = %s and source = 'garmin'",
+            [(vm, d) for d, vm in rows],
+        )
+    conn.commit()
+    return len(rows)
+
+
 def main() -> None:
     import os
 
@@ -166,6 +222,12 @@ def main() -> None:
         print(f"garmin_daily: {n2} linhas (upsert)")
         n3 = import_body(conn)
         print(f"body_metrics: {n3} linhas (upsert, source='garmin')")
+        n4 = import_details(conn)
+        print(f"activity_details: {n4} linhas (jsonb)")
+        n5 = import_prs(conn)
+        print(f"personal_records: {n5} linhas")
+        n6 = import_vo2max(conn)
+        print(f"vo2max: {n6} dias atualizados em daily")
         with conn.cursor() as cur:
             cur.execute("select count(*) from public.garmin_activities")
             print("total na tabela:", cur.fetchone()[0])

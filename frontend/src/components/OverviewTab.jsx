@@ -23,33 +23,44 @@ export default function OverviewTab({ meals }) {
   useEffect(() => {
     (async () => {
       const today = new Date();
-      const start = addDays(dateKey(today), -13);
+      /* janela larga: os últimos 14 dias com dados reais (ex.: Garmin
+         termina 21/08) */
+      const start = addDays(dateKey(today), -90);
       const list = await api.listGarminDaily(start, dateKey(today));
-      setDaily(list.map((d) => ({
-        label: dayMonth(d.date),
-        steps: d.steps,
-        activeCalories: d.active_kcal,
-        sleepHours: d.sleep_hours,
-        restingHr: d.resting_hr,
-        hrv: d.hrv,
-        intenseMin: d.intense_min,
-        caloriesBurned: d.total_kcal,
-      })));
+      const mapped = list
+        .filter((d) => d.steps || d.sleep_hours || d.hrv || d.vo2max)
+        .map((d) => ({
+          label: dayMonth(d.date),
+          date: d.date,
+          steps: d.steps,
+          activeCalories: d.active_kcal,
+          sleepHours: d.sleep_hours,
+          restingHr: d.resting_hr,
+          hrv: d.hrv,
+          vo2max: d.vo2max,
+          intenseMin: d.intense_min,
+          caloriesBurned: d.total_kcal,
+        }));
+      setDaily(mapped.slice(-14));
       const acts = await api.listGarminActivities();
       setRecent(acts.slice(0, 5));
     })();
   }, []);
 
   const last = daily && daily.length ? daily[daily.length - 1] : null;
-  const prevWeek = daily ? daily.slice(0, 7) : [];
+  const series = daily || [];
+  const lastVo2 = [...series].reverse().find((d) => d.vo2max);
+  const vo2Prev = lastVo2
+    ? [...series]
+        .filter((d) => d.vo2max && d.date < lastVo2.date)
+        .slice(-30)
+        .reduce((a, d) => d.vo2max, 0)
+    : null;
+  const prevWeek = series.slice(0, 7);
   const avg = (arr, key) =>
     arr.length
       ? +(arr.reduce((s, d) => s + (d[key] || 0), 0) / arr.filter((d) => d[key]).length).toFixed(0)
       : "—";
-
-  const kcalInToday = meals
-    .filter((m) => m.date === new Date().toISOString().slice(0, 10))
-    .reduce((s, m) => s + (m.totals ? m.totals.kcal : m.kcal || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -59,20 +70,34 @@ export default function OverviewTab({ meals }) {
         </Card>
       ) : (
       <Card className="p-6">
+        <p className="mb-4 text-right text-[11px]" style={{ color: C.muted }}>
+          dados de {fmtDate(last.date)}
+        </p>
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-          <Ring value={last.steps || 0} max={10000} label="Passos" unit="passos" color={C.blue} />
-          <Ring value={last.activeCalories || 0} max={800} label="Calorias ativas" unit="kcal" color={C.orange} />
-          <Ring value={last.sleepHours || 0} max={9} label="Sono" unit="horas" color={C.purple} />
-          <Ring value={last.hrv || 0} max={90} label="HRV noite" unit="ms" color={C.teal} />
+          <Ring value={last.steps || 0} max={10000} label={`Passos · ${dayMonth(last.date)}`} unit="passos" color={C.blue} />
+          <Ring value={last.activeCalories || 0} max={800} label={`Calorias ativas · ${dayMonth(last.date)}`} unit="kcal" color={C.orange} />
+          <Ring value={last.sleepHours || 0} max={9} label={`Sono · ${dayMonth(last.date)}`} unit="horas" color={C.purple} />
+          <Ring value={last.hrv || 0} max={90} label={`HRV noite · ${dayMonth(last.date)}`} unit="ms" color={C.teal} />
         </div>
       </Card>
       )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="FC repouso" value={last?.restingHr ?? "—"} unit="bpm" color={C.red} />
+        <StatCard label={`FC repouso${last ? ` · ${dayMonth(last.date)}` : ""}`} value={last?.restingHr ?? "—"} unit="bpm" color={C.red} />
         <StatCard label="HRV (média 7d)" value={avg(prevWeek, "hrv")} unit="ms" color={C.green} />
-        <StatCard label="Gasto diário" value={last?.caloriesBurned ?? "—"} unit="kcal" color={C.orange} />
-        <StatCard label="Ingerido hoje" value={kcalInToday || 0} unit="kcal" color={C.teal} />
+        <StatCard
+          label={lastVo2 ? `VO₂ máx · ${dayMonth(lastVo2.date)}` : "VO₂ máx"}
+          value={lastVo2?.vo2max ?? "—"}
+          unit="ml/kg/min"
+          delta={
+            lastVo2 && vo2Prev
+              ? `${lastVo2.vo2max >= vo2Prev ? "+" : ""}${lastVo2.vo2max - vo2Prev} vs. 30d`
+              : null
+          }
+          deltaLabel="anteriores"
+          color={C.blue}
+        />
+        <StatCard label={`Gasto diário${last ? ` · ${dayMonth(last.date)}` : ""}`} value={last?.caloriesBurned ?? "—"} unit="kcal" color={C.orange} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

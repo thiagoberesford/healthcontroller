@@ -12,7 +12,8 @@ import {
 import { Card, StatCard } from "./ui.jsx";
 import { C, axisProps, tooltipStyle, fmtTime } from "../theme.js";
 import { api } from "../lib/api.js";
-import { RUN_TYPES, TYPE_LABEL, TYPE_COLOR, fmtDate, fmtKcal } from "../lib/garmin.js";
+import { RUN_TYPES, TYPE_LABEL, TYPE_COLOR, fmtDate, fmtKcal, fmtRecord } from "../lib/garmin.js";
+import ActivityDetail from "./ActivityDetail.jsx";
 
 const PERIODS = [
   { id: "day", label: "Hoje", days: 1 },
@@ -48,6 +49,12 @@ export default function TrainingTab() {
   const [acts, setActs] = useState(null);
   const [prevActs, setPrevActs] = useState([]);
   const [visible, setVisible] = useState(30);
+  const [prs, setPrs] = useState([]);
+  const [selected, setSelected] = useState(null);
+
+  useEffect(() => {
+    api.listPersonalRecords().then(setPrs);
+  }, []);
 
   const period = PERIODS.find((p) => p.id === periodId);
 
@@ -274,6 +281,33 @@ export default function TrainingTab() {
             />
           </div>
 
+          {prs.length > 0 && (
+            <Card className="p-4">
+              <h3 className="mb-3 px-1 text-sm font-semibold" style={{ color: C.text }}>
+                Melhores marcas <span style={{ color: C.muted, fontWeight: 400 }}>· oficiais Garmin</span>
+              </h3>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                {prs.map((p) => (
+                  <div
+                    key={p.label}
+                    className="rounded-xl p-3"
+                    style={{ background: C.card2, border: `1px solid ${C.border}` }}
+                  >
+                    <div className="text-[10px] uppercase tracking-wide" style={{ color: C.muted }}>
+                      {p.label}
+                    </div>
+                    <div className="mt-1 text-lg font-bold" style={{ color: C.teal }}>
+                      {fmtRecord(p.value_s)}
+                    </div>
+                    <div className="text-[10px]" style={{ color: C.muted }}>
+                      {p.date ? fmtDate(p.date) : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           <Card className="p-4">
             <h3 className="mb-3 px-2 text-sm font-semibold" style={{ color: C.text }}>
               Km por {chart.unit}
@@ -319,7 +353,8 @@ export default function TrainingTab() {
                 {shown.map((a) => (
                   <div
                     key={a.source_key || a.id}
-                    className="flex items-center justify-between rounded-lg px-3 py-2.5"
+                    onClick={() => setSelected(a)}
+                    className="flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 transition-colors hover:brightness-125"
                     style={{ background: C.card2, border: `1px solid ${C.border}` }}
                   >
                     <div className="flex items-center gap-3">
@@ -368,6 +403,7 @@ export default function TrainingTab() {
           </Card>
         </>
       )}
+      {selected && <ActivityDetail activity={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }
