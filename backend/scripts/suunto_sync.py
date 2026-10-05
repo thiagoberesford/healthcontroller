@@ -16,7 +16,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -28,21 +28,7 @@ load_dotenv()
 SUUNTO_EMAIL = os.getenv("SUUNTO_EMAIL", "")
 SUUNTO_PASSWORD = os.getenv("SUUNTO_PASSWORD", "")
 DB_URL = os.getenv("SUPABASE_DB_URL", "")
-CUTOFF = date(2026, 10, 7)  # datas Suunto < cutoff não são esperadas
-
-# Mapear tipos Suunto -> tipos do app (editável quando houver dados reais)
-TYPE_MAP = {
-    "RUNNING": "running",
-    "TREADMILL_RUNNING": "treadmill_running",
-    "TRAIL_RUNNING": "trail_running",
-    "WALKING": "walking",
-    "HIKING": "walking",
-    "CYCLING": "indoor_cycling",
-    "GYM": "strength_training",
-    "GYM_AND_FITNESS": "strength_training",
-    "STRENGTH_TRAINING": "strength_training",
-}
-
+CUTOFF = date(2026, 10, 4)  # freeze real do Garmin (dados até 04/10); Suunto entra a partir de 05/10
 
 # launchd corre com PATH mínimo: resolver o binário absoluto
 SUUNTOOL_BIN = shutil.which("suuntool") or "/opt/homebrew/bin/suuntool"
@@ -110,22 +96,47 @@ def fetch_wellness(kind: str, since_iso: str) -> list[dict]:
     return ndjson(out)
 
 
+# tipos numéricos Sports-Tracker (activityId) + strings
+TYPE_MAP = {
+    0: "walking", 1: "running", 2: "indoor_cycling", 11: "walking", 22: "trail_running",
+    "RUNNING": "running", "TREADMILL_RUNNING": "treadmill_running", "TRAIL_RUNNING": "trail_running",
+    "WALKING": "walking", "HIKING": "walking", "CYCLING": "indoor_cycling",
+    "GYM": "strength_training", "GYM_AND_FITNESS": "strength_training",
+    "STRENGTH_TRAINING": "strength_training",
+}
+TYPE_LABEL = {v: str(k).replace("_", " ").title() for k, v in TYPE_MAP.items()}
+
+
+def _workout_start(w) -> str | None:
+    """startTime pode vir em epoch-ms (int) ou ISO (str)."""
+    st = w.get("startTime") or w.get("localStartTime")
+    if st is None:
+        return None
+    if isinstance(st, (int, float)):
+        return datetime.fromtimestamp(st / 1000).strftime("%Y-%m-%d %H:%M:%S")
+    return str(st)[:19].replace("T", " ")
+
+
 def map_workout(w: dict) -> dict | None:
     key = w.get("key") or w.get("workoutKey")
-    start = w.get("startTime") or w.get("localStartTime")
+    start = _workout_start(w)
     if not key or not start:
         return None
-    raw_type = (w.get("activityName") or w.get("activityType") or "").upper()
+    raw_type = w.get("activityId") if isinstance(w.get("activityId"), int) else (
+        w.get("activityName") or w.get("activityType") or ""
+    )
     dist = w.get("totalDistance") or w.get("distance")
-    dur = w.get("duration") or w.get("elapsedTime") or w.get("movingTime")
-    kcal = w.get("kcal") or w.get("energy") or w.get("calories")
-    hr = w.get("hrAvg") or w.get("avgHr") or w.get("averageHeartRate")
+    dur = w.get("totalTime") or w.get("duration") or w.get("elapsedTime")
+    kcal = w.get("energyConsumption") or w.get("kcal") or w.get("calories")
+    hrdata = w.get("hrdata") or {}
+    hr = hrdata.get("avg") or hrdata.get("workoutAvgHR") or w.get("hrAvg")
+    wtype = TYPE_MAP.get(raw_type, "other")
     return {
         "source": "suunto",
         "source_key": str(key),
-        "name": w.get("name") or raw_type.title() or "Treino",
-        "type": TYPE_MAP.get(raw_type, "other"),
-        "start": str(start)[:19].replace("T", " "),
+        "name": w.get("name") or TYPE_LABEL.get(wtype, "Treino"),
+        "type": wtype,
+        "start": start,
         "distance_km": round((dist or 0) / 1000, 2) if dist else 0,
         "duration_s": round(dur) if dur else None,
         "kcal": int(kcal) if kcal else None,
