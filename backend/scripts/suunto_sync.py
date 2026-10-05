@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -43,8 +44,12 @@ TYPE_MAP = {
 }
 
 
+# launchd corre com PATH mínimo: resolver o binário absoluto
+SUUNTOOL_BIN = shutil.which("suuntool") or "/opt/homebrew/bin/suuntool"
+
+
 def suuntool(*args: str) -> str:
-    cmd = ["suuntool", *args]
+    cmd = [SUUNTOOL_BIN, *args]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if r.returncode != 0:
         raise RuntimeError(f"suuntool {' '.join(args)} falhou: {r.stderr[:200]}")
@@ -52,12 +57,12 @@ def suuntool(*args: str) -> str:
 
 
 def ensure_login() -> None:
-    who = subprocess.run(["suuntool", "whoami"], capture_output=True, text=True)
+    who = subprocess.run([SUUNTOOL_BIN, "whoami"], capture_output=True, text=True)
     if who.returncode != 0 or '"username"' not in who.stdout:
         if not SUUNTO_EMAIL or not SUUNTO_PASSWORD:
             raise RuntimeError("Sem sessão suuntool e sem SUUNTO_EMAIL/SUUNTO_PASSWORD no .env")
         subprocess.run(
-            ["suuntool", "login", "--email", SUUNTO_EMAIL, "--password-stdin"],
+            [SUUNTOOL_BIN, "login", "--email", SUUNTO_EMAIL, "--password-stdin"],
             input=SUUNTO_PASSWORD,
             capture_output=True,
             text=True,
@@ -131,16 +136,18 @@ def map_workout(w: dict) -> dict | None:
 def map_daily(entries: dict[str, list[dict]]) -> list[dict]:
     """Une wellness activity/sleep/recovery por dia."""
     by_day: dict[str, dict] = {}
+    # wellness 'activity': entradas a cada ~10min com valores POR
+    # INTERVALO (stepCount e energyConsumption em joules) -> SOMAR o dia
     for e in entries.get("activity", []):
         d = (e.get("timestamp") or e.get("date") or "")[:10]
         data = e.get("entryData") or {}
         row = by_day.setdefault(d, {"date": d, "source": "suunto"})
-        row["steps"] = data.get("stepCount") or row.get("steps")
-        row["active_kcal"] = (
-            data.get("activityCalories") or data.get("kcal") or row.get("active_kcal")
-        )
-        row["total_kcal"] = data.get("totalCalories") or row.get("total_kcal")
-        row["floors"] = data.get("ascentMeters") or row.get("floors")
+        row["steps"] = (row.get("steps") or 0) + (data.get("stepCount") or 0)
+        energy = data.get("energyConsumption")
+        if energy:
+            row["_energy_j"] = (row.get("_energy_j") or 0) + energy
+        if data.get("ascentMeters"):
+            row["floors"] = (row.get("floors") or 0) + data["ascentMeters"]
     for e in entries.get("sleep", []):
         d = (e.get("timestamp") or e.get("date") or "")[:10]
         data = e.get("entryData") or {}
@@ -161,6 +168,11 @@ def map_daily(entries: dict[str, list[dict]]) -> list[dict]:
         row = by_day.setdefault(d, {"date": d, "source": "suunto"})
         row["hrv"] = data.get("hrv") or data.get("hrvMs") or row.get("hrv")
         row["stress_avg"] = data.get("stress") or row.get("stress_avg")
+    for r in by_day.values():
+        if r.get("_energy_j"):
+            r["active_kcal"] = round(r.pop("_energy_j") / 4186)
+        else:
+            r.pop("_energy_j", None)
     return [r for r in by_day.values() if r["date"]]
 
 
