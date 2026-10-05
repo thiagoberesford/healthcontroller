@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { C } from "./theme.js";
+import { C, setTheme, savedThemeIsLight } from "./theme.js";
 import { api, SUPABASE_ENABLED, sbUser, sbSignOut, onSbAuthChange } from "./lib/api.js";
 import LoginScreen from "./components/LoginScreen.jsx";
 import OverviewTab from "./components/OverviewTab.jsx";
@@ -16,6 +16,7 @@ const TABS = [
 
 export default function App() {
   const [tab, setTab] = useState("overview");
+  const [lightTheme, setLightTheme] = useState(savedThemeIsLight());
   const [mode, setMode] = useState("local");
   const [user, setUser] = useState(SUPABASE_ENABLED ? undefined : null);
   const [meals, setMeals] = useState([]);
@@ -88,6 +89,19 @@ export default function App() {
               Sair
             </button>
           )}
+          <button
+            onClick={() => {
+              setLightTheme((v) => {
+                setTheme(!v);
+                return !v;
+              });
+            }}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+            style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text }}
+            title="Alternar tema"
+          >
+            {lightTheme ? "Lua" : "Sol"}
+          </button>
           <button
             onClick={() => setRefreshKey((k) => k + 1)}
             className="rounded-lg px-3 py-1.5 text-xs font-semibold"

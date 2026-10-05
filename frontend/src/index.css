@@ -2,9 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
+/* tema: dark por omissão; classe 'light' no <html> troca as vars */
+:root {
+  --bg: #0e1116;
+  --card: #171c24;
+  --card2: #1e242f;
+  --border: #2a3140;
+  --text: #e7ecf3;
+  --muted: #8b97a8;
+  --teal: #00b4b3;
+  --blue: #3b82f6;
+  --orange: #ff5d1f;
+  --green: #4ade80;
+  --purple: #a78bfa;
+  --red: #f87171;
+}
+
+:root.light {
+  --bg: #f2f5f9;
+  --card: #ffffff;
+  --card2: #e9edf3;
+  --border: #d3dbe6;
+  --text: #16202e;
+  --muted: #5c6b7e;
+  --teal: #009493;
+  --blue: #2563eb;
+  --orange: #e04e12;
+  --green: #15803d;
+  --purple: #7c3aed;
+  --red: #dc2626;
+}
+
 body {
-  background-color: #0e1116;
-  color: #e7ecf3;
+  background-color: var(--bg);
+  color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
 }

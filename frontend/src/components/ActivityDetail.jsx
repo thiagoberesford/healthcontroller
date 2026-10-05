@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { C, tooltipStyle } from "../theme.js";
+import { C, tooltipStyle, isLight } from "../theme.js";
 import { api } from "../lib/api.js";
 import {
   TYPE_LABEL,
@@ -36,10 +36,13 @@ function MapCard({ polyline }) {
   useEffect(() => {
     if (!ref.current || !polyline?.length) return;
     const map = L.map(ref.current, { attributionControl: true });
-    L.tileLayer(
-      "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-      { attribution: "© OpenStreetMap contributors · Esri, HERE, Garmin", maxZoom: 16 },
-    ).addTo(map);
+    const tiles = isLight()
+      ? "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+      : "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}";
+    L.tileLayer(tiles, {
+      attribution: "© OpenStreetMap contributors · Esri, HERE, Garmin",
+      maxZoom: 16,
+    }).addTo(map);
     L.tileLayer(
       "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
       { maxZoom: 16 },

@@ -9,6 +9,14 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   </React.StrictMode>
 );
 
+// tema guardado antes do primeiro render (evita flash de cor)
+try {
+  document.documentElement.classList.toggle(
+    "light",
+    localStorage.getItem("hc-theme") === "light",
+  );
+} catch (e) {}
+
 // PWA: registar o service worker (criterio de instalavel)
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {

@@ -4,6 +4,8 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -12,7 +14,7 @@ import {
 import { Card, StatCard } from "./ui.jsx";
 import { C, axisProps, tooltipStyle, fmtTime } from "../theme.js";
 import { api, SUPABASE_ENABLED } from "../lib/api.js";
-import { RUN_TYPES, TYPE_LABEL, TYPE_COLOR, fmtDate, fmtKcal, fmtRecord } from "../lib/garmin.js";
+import { RUN_TYPES, TYPE_LABEL, TYPE_COLOR, fmtDate, fmtKcal, fmtRecord, dayMonth } from "../lib/garmin.js";
 import ActivityDetail from "./ActivityDetail.jsx";
 
 const PERIODS = [
@@ -50,6 +52,7 @@ export default function TrainingTab() {
   const [prevActs, setPrevActs] = useState([]);
   const [visible, setVisible] = useState(30);
   const [prs, setPrs] = useState([]);
+  const [vo2, setVo2] = useState([]);
   const [selected, setSelected] = useState(null);
 
   useEffect(() => {
@@ -88,6 +91,13 @@ export default function TrainingTab() {
       const list = await api.listGarminActivities(start, end);
       if (!alive) return;
       setActs(list);
+      const daily = await api.listGarminDaily(start, end);
+      if (!alive) return;
+      setVo2(
+        daily
+          .filter((d) => d.vo2max)
+          .map((d) => ({ label: dayMonth(d.date), vo2: d.vo2max, date: d.date })),
+      );
       if (start && days) {
         const prev = await api.listGarminActivities(
           addDays(start, -days),
@@ -343,6 +353,26 @@ export default function TrainingTab() {
               </ResponsiveContainer>
             )}
           </Card>
+
+          {vo2.length >= 2 && (
+            <Card className="p-4">
+              <h3 className="mb-3 px-2 text-sm font-semibold" style={{ color: C.text }}>
+                Evolução do VO₂ máx <span style={{ color: C.muted, fontWeight: 400 }}>({vo2.length} medições)</span>
+              </h3>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={vo2}>
+                  <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+                  <XAxis dataKey="label" {...axisProps} minTickGap={14} />
+                  <YAxis {...axisProps} domain={["dataMin - 2", "dataMax + 2"]} />
+                  <Tooltip
+                    contentStyle={tooltipStyle}
+                    formatter={(v) => [`${v} ml/kg/min`, "VO₂"]}
+                  />
+                  <Line type="monotone" dataKey="vo2" stroke={C.blue} strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </Card>
+          )}
 
           <Card className="p-4">
             <h3 className="mb-3 px-2 text-sm font-semibold" style={{ color: C.text }}>
