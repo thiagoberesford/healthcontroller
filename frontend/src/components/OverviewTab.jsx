@@ -14,11 +14,21 @@ import { Card, Ring, StatCard } from "./ui.jsx";
 import { C, axisProps, tooltipStyle, fmtTime } from "../theme.js";
 import { api } from "../lib/api.js";
 import { addDays, dateKey, dayMonth } from "../lib/garmin.js";
+import MetricDetail from "./MetricDetail.jsx";
+
+/* métricas detalháveis: key = coluna em daily */
+const METRICS = {
+  steps: { key: "steps", title: "Passos", unit: "passos", color: C.blue },
+  activeCalories: { key: "active_kcal", title: "Calorias ativas", unit: "kcal", color: C.orange },
+  sleepHours: { key: "sleep_hours", title: "Sono", unit: "horas", color: C.purple, decimals: true },
+  hrv: { key: "hrv", title: "HRV noite", unit: "ms", color: C.teal },
+};
 import { TYPE_LABEL, TYPE_COLOR, fmtDate, fmtKcal } from "../lib/garmin.js";
 
 export default function OverviewTab({ meals }) {
   const [daily, setDaily] = useState(null);
   const [recent, setRecent] = useState([]);
+  const [detail, setDetail] = useState(null);
 
   /* dados "ao vivo": carregar + refrescar a cada 60s e quando o
      separador volta a ficar visível (o sync do Mac corre à hora) */
@@ -89,10 +99,21 @@ export default function OverviewTab({ meals }) {
           dados de {fmtDate(last.date)}
         </p>
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-          <Ring value={last.steps || 0} max={10000} label="Passos" unit="passos" color={C.blue} />
-          <Ring value={last.activeCalories || 0} max={800} label="Calorias ativas" unit="kcal" color={C.orange} />
-          <Ring value={last.sleepHours || 0} max={9} label="Sono" unit="horas" color={C.purple} />
-          <Ring value={last.hrv || 0} max={90} label="HRV noite" unit="ms" color={C.teal} />
+          {[
+            { m: METRICS.steps, value: last.steps || 0, max: 10000, unit: "passos" },
+            { m: METRICS.activeCalories, value: last.activeCalories || 0, max: 800, unit: "kcal" },
+            { m: METRICS.sleepHours, value: last.sleepHours || 0, max: 9, unit: "horas" },
+            { m: METRICS.hrv, value: last.hrv || 0, max: 90, unit: "ms" },
+          ].map(({ m, ...ringProps }) => (
+            <div
+              key={m.key}
+              onClick={() => setDetail(m)}
+              className="cursor-pointer rounded-xl transition-transform hover:scale-105"
+              title={`Ver evolução de ${m.title}`}
+            >
+              <Ring {...ringProps} label={m.title} color={m.color} />
+            </div>
+          ))}
         </div>
       </Card>
       )}
@@ -116,7 +137,11 @@ export default function OverviewTab({ meals }) {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="p-4">
+        <Card
+          className="cursor-pointer p-4 transition-colors hover:brightness-110"
+          onClick={() => setDetail(METRICS.steps)}
+          title="Ver evolução de Passos"
+        >
           <h3 className="mb-3 px-2 text-sm font-semibold" style={{ color: C.text }}>
             Passos (14 dias)
           </h3>
@@ -137,7 +162,11 @@ export default function OverviewTab({ meals }) {
           </ResponsiveContainer>
         </Card>
 
-        <Card className="p-4">
+        <Card
+          className="cursor-pointer p-4 transition-colors hover:brightness-110"
+          onClick={() => setDetail(METRICS.sleepHours)}
+          title="Ver evolução de Sono"
+        >
           <h3 className="mb-3 px-2 text-sm font-semibold" style={{ color: C.text }}>
             Sono vs. FC repouso
           </h3>
@@ -196,6 +225,7 @@ export default function OverviewTab({ meals }) {
           )}
         </div>
       </Card>
+      {detail && <MetricDetail metric={detail} onClose={() => setDetail(null)} />}
     </div>
   );
 }
