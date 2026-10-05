@@ -25,7 +25,7 @@ const METRICS = {
 };
 import { TYPE_LABEL, TYPE_COLOR, fmtDate, fmtKcal } from "../lib/garmin.js";
 
-export default function OverviewTab({ meals }) {
+export default function OverviewTab({ meals, refreshKey }) {
   const [daily, setDaily] = useState(null);
   const [recent, setRecent] = useState([]);
   const [detail, setDetail] = useState(null);
@@ -66,7 +66,7 @@ export default function OverviewTab({ meals }) {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, []);
+  }, [refreshKey]);
 
   const last = daily && daily.length ? daily[daily.length - 1] : null;
   const series = daily || [];

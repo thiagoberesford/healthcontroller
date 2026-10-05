@@ -17,7 +17,7 @@ import { dayMonth } from "../lib/garmin.js";
 
 const HEIGHT_M = 1.78;
 
-export default function BodyTab({ onSaved }) {
+export default function BodyTab({ onSaved, refreshKey }) {
   const [weight, setWeight] = useState("");
   const [muscle, setMuscle] = useState("");
   const [fat, setFat] = useState("");
@@ -41,7 +41,7 @@ export default function BodyTab({ onSaved }) {
     );
   };
 
-  useEffect(load, []);
+  useEffect(load, [refreshKey]);
 
   const [formMsg, setFormMsg] = useState(null);
 

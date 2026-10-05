@@ -138,12 +138,13 @@ export default function App() {
         ))}
       </nav>
 
-      {tab === "overview" && <OverviewTab meals={meals} />}
-      {tab === "training" && <TrainingTab />}
-      {tab === "body" && <BodyTab onSaved={() => setRefreshKey((k) => k + 1)} />}
+      {tab === "overview" && <OverviewTab meals={meals} refreshKey={refreshKey} />}
+      {tab === "training" && <TrainingTab refreshKey={refreshKey} />}
+      {tab === "body" && <BodyTab onSaved={() => setRefreshKey((k) => k + 1)} refreshKey={refreshKey} />}
       {tab === "nutrition" && (
         <NutritionTab
           meals={meals}
+          refreshKey={refreshKey}
           addMeal={() => setRefreshKey((k) => k + 1)}
           removeMeal={() => setRefreshKey((k) => k + 1)}
         />

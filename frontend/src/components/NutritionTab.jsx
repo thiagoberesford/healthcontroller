@@ -19,7 +19,7 @@ const todayIso = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-export default function NutritionTab({ meals, addMeal, removeMeal }) {
+export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal }) {
   const [input, setInput] = useState("");
   const [preview, setPreview] = useState(null);
   const [burnedToday, setBurnedToday] = useState(null);
@@ -41,7 +41,7 @@ export default function NutritionTab({ meals, addMeal, removeMeal }) {
       const d = await api.listGarminDaily(today, today);
       setBurnedToday(d.length ? d[0].total_kcal : 0);
     })();
-  }, []);
+  }, [refreshKey]);
 
   const normQ = (s) =>
     (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");

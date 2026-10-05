@@ -45,7 +45,7 @@ const pctDelta = (curr, prev) => {
   return `${pct >= 0 ? "+" : ""}${pct}%`;
 };
 
-export default function TrainingTab() {
+export default function TrainingTab({ refreshKey }) {
   const [periodId, setPeriodId] = useState("month");
   const [custom, setCustom] = useState({ start: "", end: "" });
   const [acts, setActs] = useState(null);
@@ -57,7 +57,7 @@ export default function TrainingTab() {
 
   useEffect(() => {
     api.listPersonalRecords().then(setPrs);
-  }, []);
+  }, [refreshKey]);
 
   const period = PERIODS.find((p) => p.id === periodId);
 
@@ -111,7 +111,7 @@ export default function TrainingTab() {
     return () => {
       alive = false;
     };
-  }, [periodId, custom, start, end, days]);
+  }, [periodId, custom, start, end, days, refreshKey]);
 
   const stats = useMemo(() => {
     if (!acts) return null;
