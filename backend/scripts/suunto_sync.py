@@ -267,6 +267,10 @@ def main() -> None:
             print("DRY-RUN: nada escrito")
             return
         upsert(conn, workouts, daily)
+        if workouts:
+            # detalhes (SML -> activity_details) para os treinos novos
+            from suunto_details import sync_details
+            sync_details(conn, [w["source_key"] for w in workouts])
         print("SYNC OK")
 
 
