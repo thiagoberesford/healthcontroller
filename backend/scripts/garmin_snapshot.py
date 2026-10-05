@@ -238,12 +238,13 @@ def main() -> None:
     global _t0, _max_seconds
     ap = argparse.ArgumentParser()
     ap.add_argument("--start", default="2019-06-26", help="primeira data da conta")
+    ap.add_argument("--end", default=None, help="data de corte do snapshot (default: hoje)")
     ap.add_argument("--max-seconds", type=float, default=240.0, help="orçamento de tempo antes de pausar")
     args = ap.parse_args()
     _max_seconds = args.max_seconds
     _t0 = time.time()
     start = date.fromisoformat(args.start)
-    end = date.today()
+    end = date.fromisoformat(args.end) if args.end else date.today()
 
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     print(f"Login Garmin...", flush=True)

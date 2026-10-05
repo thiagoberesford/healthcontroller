@@ -1,4 +1,12 @@
-# Garmin — integração
+# Garmin — integração (ARQUIVO CONGELADO)
+
+> **Congelado em 2026-10-05** com dados até **2026-10-04**. A integração
+> garminconnect está APOSENTADA: token apagado (~/.garminconnect),
+> LaunchAgent do sync horário desligado, e nenhuma linha `source='garmin'`
+> volta a ser escrita. Fonte diária a partir de agora: **Suunto**
+> (suunto_sync.py). Histórico completo servido das tabelas unificadas.
+
+
 
 ## Via biblilioteca `garminconnect` (já no backend)
 
