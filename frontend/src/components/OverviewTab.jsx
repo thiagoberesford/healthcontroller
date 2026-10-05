@@ -89,16 +89,16 @@ export default function OverviewTab({ meals }) {
           dados de {fmtDate(last.date)}
         </p>
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-          <Ring value={last.steps || 0} max={10000} label={`Passos · ${dayMonth(last.date)}`} unit="passos" color={C.blue} />
-          <Ring value={last.activeCalories || 0} max={800} label={`Calorias ativas · ${dayMonth(last.date)}`} unit="kcal" color={C.orange} />
-          <Ring value={last.sleepHours || 0} max={9} label={`Sono · ${dayMonth(last.date)}`} unit="horas" color={C.purple} />
-          <Ring value={last.hrv || 0} max={90} label={`HRV noite · ${dayMonth(last.date)}`} unit="ms" color={C.teal} />
+          <Ring value={last.steps || 0} max={10000} label="Passos" unit="passos" color={C.blue} />
+          <Ring value={last.activeCalories || 0} max={800} label="Calorias ativas" unit="kcal" color={C.orange} />
+          <Ring value={last.sleepHours || 0} max={9} label="Sono" unit="horas" color={C.purple} />
+          <Ring value={last.hrv || 0} max={90} label="HRV noite" unit="ms" color={C.teal} />
         </div>
       </Card>
       )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label={`FC repouso${last ? ` · ${dayMonth(last.date)}` : ""}`} value={last?.restingHr ?? "—"} unit="bpm" color={C.red} />
+        <StatCard label="FC repouso" value={last?.restingHr ?? "—"} unit="bpm" color={C.red} />
         <StatCard label="HRV (média 7d)" value={avg(prevWeek, "hrv")} unit="ms" color={C.green} />
         <StatCard
           label={lastVo2 ? `VO₂ máx · ${dayMonth(lastVo2.date)}` : "VO₂ máx"}
@@ -112,7 +112,7 @@ export default function OverviewTab({ meals }) {
           deltaLabel="anteriores"
           color={C.blue}
         />
-        <StatCard label={`Gasto diário${last ? ` · ${dayMonth(last.date)}` : ""}`} value={last?.caloriesBurned ?? "—"} unit="kcal" color={C.orange} />
+        <StatCard label="Gasto diário" value={last?.caloriesBurned ?? "—"} unit="kcal" color={C.orange} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
