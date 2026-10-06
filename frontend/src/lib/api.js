@@ -463,6 +463,7 @@ export const api = {
       const { data, error } = await sb
         .from("planned_workouts")
         .select("id,date,name,source,data")
+        .eq("source", "treinus")
         .order("date", { ascending: true });
       if (error) return [];
       return data || [];
