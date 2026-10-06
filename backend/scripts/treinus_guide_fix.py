@@ -110,9 +110,11 @@ def build_guide(row: dict) -> dict | None:
         return None
     d = datetime.strptime(row["date"], "%Y-%m-%d")
     wd = WEEKDAYS[d.weekday()]
+    suffix = f"{wd} {d.strftime('%d/%m')}"
+    name = row["name"] if suffix in row["name"] else f"{row['name']} {suffix}"
     return {
         "type": "sequence",
-        "name": f"{row['name']} {wd} {d.strftime('%d/%m')}",
+        "name": name,
         "description": "Consulte os detalhes desta atividade no Treinus",
         "owner": "Treinus",
         "activities": ACTIVITIES,

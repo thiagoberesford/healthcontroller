@@ -80,9 +80,10 @@ def upload_guide(guide: dict, icon: bytes | None) -> str:
 def process_queue() -> int:
     with psycopg.connect(DB_URL) as conn:
         with conn.cursor() as cur:
+            # uma linha por data (cliques repetidos criam linhas extra)
             cur.execute(
-                "select id, date, payload from public.guide_push_queue "
-                "where status = 'pending' order by id limit 10"
+                "select distinct on (date) id, date, payload from public.guide_push_queue "
+                "where status = 'pending' order by date, id limit 10"
             )
             rows = cur.fetchall()
         if not rows:
@@ -110,9 +111,11 @@ def process_queue() -> int:
                     raise RuntimeError("detail sem segmentos")
                 gid = upload_guide(guide, icon)
                 with conn.cursor() as cur:
+                    # resolve todas as pendências dessa data, não só esta linha
                     cur.execute(
                         "update public.guide_push_queue set status = 'done', "
-                        "processed_at = now(), error = null where id = %s", (qid,))
+                        "processed_at = now(), error = null "
+                        "where date = %s and status = 'pending'", (d,))
                     cur.execute(
                         "update public.planned_workouts set push_status = 'watch', "
                         "pushed_at = now() where source = 'treinus' and date = %s", (d,))
