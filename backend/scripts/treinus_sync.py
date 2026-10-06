@@ -102,15 +102,21 @@ def fetch_planned(token: str, days_back: int = 3, days_ahead: int = 14) -> list[
     return planned
 
 
+WEEKDAYS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"]
+
+
 def map_row(p: dict) -> dict | None:
     pid = p.get("IdExercise")
     date = (p.get("Date") or "")[:10]
     if not pid or not date:
         return None
+    d = datetime.strptime(date, "%Y-%m-%d")
+    wd = WEEKDAYS[d.weekday()]
+    type_name = p.get("Type") or p.get("Genre") or "Treino"
     return {
         "id": f"treinus_{pid}",
         "date": date,
-        "name": p.get("Type") or p.get("Genre") or "Treino planeado",
+        "name": f"{type_name} {wd} {d.strftime('%d/%m')}",
         "data": {
             "briefing": (p.get("Briefing") or "").replace("\r\n", "\n").strip(),
             "detail": p.get("Detail"),

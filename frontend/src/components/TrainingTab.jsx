@@ -513,19 +513,14 @@ function PlannedCard({ planned, openGuide, setOpenGuide }) {
                 onClick={() => setOpenGuide(open ? null : p.id)}
                 className="flex w-full items-center justify-between gap-3 py-2.5 text-left"
               >
-                <span>
-                  <span className="mr-2 text-xs" style={{ color: C.teal }}>
-                    {dayMonth(p.date)}
-                  </span>
-                  <span className="text-sm font-medium" style={{ color: C.text }}>
-                    {p.name}
-                  </span>
-                  {p.data?.done && (
-                    <span className="ml-2 text-xs" style={{ color: C.green }}>
-                      feito
-                    </span>
-                  )}
+                <span className="text-sm font-medium" style={{ color: C.text }}>
+                  {p.name}
                 </span>
+                {p.data?.done && (
+                  <span className="ml-2 text-xs" style={{ color: C.green }}>
+                    feito
+                  </span>
+                )}
                 <span className="flex items-center gap-2">
                   <span className="text-xs" style={{ color: C.muted }}>
                     {p.data?.time_max ? `~${p.data.time_max}` : ""}
