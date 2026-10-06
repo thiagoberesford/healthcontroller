@@ -450,7 +450,7 @@ export default function TrainingTab({ refreshKey }) {
   );
 }
 
-/* Treinos planeados vindos do Treinus (via SuuntoPlus Guides). */
+/* Treinos planeados vindos do Treinus (API direta) — briefing do treinador. */
 function PlannedCard({ planned, openGuide, setOpenGuide }) {
   const today = dateKey(new Date());
   const upcoming = planned.filter((p) => p.date >= today);
@@ -462,8 +462,9 @@ function PlannedCard({ planned, openGuide, setOpenGuide }) {
       </h3>
       <div style={{ borderTop: `1px solid ${C.border}` }}>
         {upcoming.map((p) => {
-          const steps = p.data?.steps || [];
           const open = openGuide === p.id;
+          const briefing = p.data?.briefing;
+          const steps = p.data?.steps; // fallback: guides do relógio
           return (
             <div key={p.id} style={{ borderBottom: `1px solid ${C.border}` }}>
               <button
@@ -477,15 +478,25 @@ function PlannedCard({ planned, openGuide, setOpenGuide }) {
                   <span className="text-sm font-medium" style={{ color: C.text }}>
                     {p.name}
                   </span>
+                  {p.data?.done && (
+                    <span className="ml-2 text-xs" style={{ color: C.green }}>
+                      feito
+                    </span>
+                  )}
                 </span>
                 <span className="text-xs" style={{ color: C.muted }}>
-                  {p.data?.total_duration_s
-                    ? `~${fmtTime(p.data.total_duration_s)}`
-                    : "duração livre"}
-                  {steps.length ? ` · ${steps.length} passos` : ""}
+                  {p.data?.time_max ? `~${p.data.time_max}` : ""}
                 </span>
               </button>
-              {open && steps.length > 0 && (
+              {open && briefing && (
+                <pre
+                  className="mb-3 whitespace-pre-wrap rounded-lg p-3 text-xs"
+                  style={{ background: C.card2, color: C.text, border: `1px solid ${C.border}` }}
+                >
+                  {briefing}
+                </pre>
+              )}
+              {open && !briefing && steps?.length > 0 && (
                 <ul className="space-y-1 pb-3">
                   {steps.map((s, i) => (
                     <li key={i} className="flex flex-wrap gap-2 text-xs">

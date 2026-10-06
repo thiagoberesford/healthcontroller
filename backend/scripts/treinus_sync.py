@@ -23,6 +23,7 @@ import json
 import os
 import sys
 import urllib.request
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -40,8 +41,9 @@ TREINUS_PASSWORD = os.getenv("TREINUS_PASSWORD", "")
 DB_URL = os.getenv("SUPABASE_DB_URL", "")
 
 # Chave/IV extraídos de com.af2g.treinus.utils.Cripto (app Android)
+# Nota: Ascii.FF (Guava) = form feed = 12, NÃO 0xFF
 _AES_KEY = b"tv93h58sk1zh5x8v"
-_AES_IV = bytes([0xFF, 34, 56, 78, 90, 102, 114, 126] * 2)
+_AES_IV = bytes([12, 34, 56, 78, 90, 102, 114, 126] * 2)
 
 
 def cript_string(text: str) -> str:
@@ -86,18 +88,18 @@ def login() -> str:
     return teams[0].get("Token") or ""
 
 
-def fetch_planned(token: str):
-    status, body = _req("GET", "/app/exercises/planneds", token=token)
-    if status != 200:
-        raise RuntimeError(f"planneds falhou ({status}): {body[:200].decode('utf-8', 'replace')}")
-    doc = json.loads(body)
-    # pode vir como lista ou embrulhado
-    if isinstance(doc, list):
-        return doc
-    for k in ("Exercises", "PlannedExercises", "Data", "Items", "List"):
-        if isinstance(doc.get(k), list):
-            return doc[k]
-    return [doc] if isinstance(doc, dict) and doc.get("IdExercise") else []
+def fetch_planned(token: str, days_back: int = 3, days_ahead: int = 14) -> list[dict]:
+    """GET app/exercises/{yyyy-MM-dd} por dia -> ExercisesPlan."""
+    planned: list[dict] = []
+    today = datetime.now().date()
+    for delta in range(-days_back, days_ahead + 1):
+        d = (today + timedelta(days=delta)).isoformat()
+        status, body = _req("GET", f"/app/exercises/{d}", token=token)
+        if status != 200:
+            continue  # dia sem plano ou indisponível
+        doc = json.loads(body)
+        planned.extend(doc.get("ExercisesPlan") or [])
+    return planned
 
 
 def map_row(p: dict) -> dict | None:
@@ -108,16 +110,16 @@ def map_row(p: dict) -> dict | None:
     return {
         "id": f"treinus_{pid}",
         "date": date,
-        "name": p.get("Name") or p.get("Briefing") or "Treino planeado",
+        "name": p.get("Type") or p.get("Genre") or "Treino planeado",
         "data": {
-            "briefing": p.get("Briefing"),
+            "briefing": (p.get("Briefing") or "").replace("\r\n", "\n").strip(),
             "detail": p.get("Detail"),
+            "genre": p.get("Genre"),
+            "course_type": p.get("CourseType"),
             "distance": p.get("Distance"),
             "distance_unit": p.get("DistanceUnit"),
-            "intensity": p.get("Intensity"),
+            "time_min": p.get("TimeMin"),
             "time_max": p.get("TimeMax"),
-            "course_type": p.get("CourseType"),
-            "genre": p.get("Genre"),
             "done": p.get("Done"),
             "id_exercise": pid,
         },
