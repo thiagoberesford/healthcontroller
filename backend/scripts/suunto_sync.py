@@ -272,11 +272,17 @@ def main() -> None:
             from suunto_details import sync_details
             sync_details(conn, [w["source_key"] for w in workouts])
         try:
-            # treinos planeados (Treinus via SuuntoPlus Guides)
+            # treinos planeados (Treinus via SuuntoPlus Guides = o que está no relógio)
             from suunto_guides_sync import sync_guides
             sync_guides(conn)
         except Exception as ex:
             print(f"  guides: falhou ({str(ex)[:80]}) — a ignorar")
+        try:
+            # plano autoritativo do Treinus (API direta)
+            from treinus_sync import sync as treinus_sync
+            treinus_sync()
+        except Exception as ex:
+            print(f"  treinus: falhou ({str(ex)[:80]}) — a ignorar")
         print("SYNC OK")
 
 

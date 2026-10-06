@@ -99,7 +99,7 @@ def sync_guides(conn, dry_run: bool = False) -> int:
                     cur.execute(
                         """
                         insert into public.planned_workouts (id, date, name, source, data)
-                        values (%s, %s, %s, 'treinus', %s::jsonb)
+                        values (%s, %s, %s, 'suunto_guide', %s::jsonb)
                         on conflict (id) do update set
                           date = excluded.date, name = excluded.name,
                           data = excluded.data, updated_at = now()
