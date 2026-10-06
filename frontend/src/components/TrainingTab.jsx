@@ -53,10 +53,13 @@ export default function TrainingTab({ refreshKey }) {
   const [visible, setVisible] = useState(30);
   const [prs, setPrs] = useState([]);
   const [vo2, setVo2] = useState([]);
+  const [planned, setPlanned] = useState([]);
+  const [openGuide, setOpenGuide] = useState(null);
   const [selected, setSelected] = useState(null);
 
   useEffect(() => {
     api.listPersonalRecords().then(setPrs);
+    api.listPlannedWorkouts().then(setPlanned);
   }, [refreshKey]);
 
   const period = PERIODS.find((p) => p.id === periodId);
@@ -267,6 +270,7 @@ export default function TrainingTab({ refreshKey }) {
         </Card>
       ) : (
         <>
+          <PlannedCard planned={planned} openGuide={openGuide} setOpenGuide={setOpenGuide} />
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <StatCard
               label="Sessões"
@@ -443,5 +447,61 @@ export default function TrainingTab({ refreshKey }) {
       )}
       {selected && <ActivityDetail activity={selected} onClose={() => setSelected(null)} />}
     </div>
+  );
+}
+
+/* Treinos planeados vindos do Treinus (via SuuntoPlus Guides). */
+function PlannedCard({ planned, openGuide, setOpenGuide }) {
+  const today = dateKey(new Date());
+  const upcoming = planned.filter((p) => p.date >= today);
+  if (!upcoming.length) return null;
+  return (
+    <Card className="p-4">
+      <h3 className="mb-2 text-xs font-semibold" style={{ color: C.text }}>
+        Plano · Treinus
+      </h3>
+      <div style={{ borderTop: `1px solid ${C.border}` }}>
+        {upcoming.map((p) => {
+          const steps = p.data?.steps || [];
+          const open = openGuide === p.id;
+          return (
+            <div key={p.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+              <button
+                onClick={() => setOpenGuide(open ? null : p.id)}
+                className="flex w-full items-center justify-between gap-3 py-2.5 text-left"
+              >
+                <span>
+                  <span className="mr-2 text-xs" style={{ color: C.teal }}>
+                    {dayMonth(p.date)}
+                  </span>
+                  <span className="text-sm font-medium" style={{ color: C.text }}>
+                    {p.name}
+                  </span>
+                </span>
+                <span className="text-xs" style={{ color: C.muted }}>
+                  {p.data?.total_duration_s
+                    ? `~${fmtTime(p.data.total_duration_s)}`
+                    : "duração livre"}
+                  {steps.length ? ` · ${steps.length} passos` : ""}
+                </span>
+              </button>
+              {open && steps.length > 0 && (
+                <ul className="space-y-1 pb-3">
+                  {steps.map((s, i) => (
+                    <li key={i} className="flex flex-wrap gap-2 text-xs">
+                      <span style={{ color: C.teal }}>{s.title}</span>
+                      {s.text && <span style={{ color: C.text }}>{s.text}</span>}
+                      {s.duration_s && (
+                        <span style={{ color: C.muted }}>{fmtTime(s.duration_s)}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }

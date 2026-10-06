@@ -271,6 +271,12 @@ def main() -> None:
             # detalhes (SML -> activity_details) para os treinos novos
             from suunto_details import sync_details
             sync_details(conn, [w["source_key"] for w in workouts])
+        try:
+            # treinos planeados (Treinus via SuuntoPlus Guides)
+            from suunto_guides_sync import sync_guides
+            sync_guides(conn)
+        except Exception as ex:
+            print(f"  guides: falhou ({str(ex)[:80]}) — a ignorar")
         print("SYNC OK")
 
 

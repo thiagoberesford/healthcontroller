@@ -70,6 +70,9 @@ export default function OverviewTab({ meals, refreshKey }) {
 
   const last = daily && daily.length ? daily[daily.length - 1] : null;
   const series = daily || [];
+  // o sono de "hoje" só fica registado amanhã: o card mostra a última
+  // noite completa (registo mais recente com horas de sono)
+  const sleepLast = [...series].reverse().find((d) => d.sleepHours);
   const lastVo2 = [...series].reverse().find((d) => d.vo2max);
   const prevVo2 = lastVo2
     ? series.filter((d) => d.vo2max && d.date < lastVo2.date).slice(-30)
@@ -102,7 +105,7 @@ export default function OverviewTab({ meals, refreshKey }) {
           {[
             { m: METRICS.steps, value: last.steps || 0, max: 10000, unit: "passos" },
             { m: METRICS.activeCalories, value: last.activeCalories || 0, max: 800, unit: "kcal" },
-            { m: METRICS.sleepHours, value: last.sleepHours || 0, max: 9, unit: "horas" },
+            { m: METRICS.sleepHours, value: sleepLast?.sleepHours || 0, max: 9, unit: "horas", date: sleepLast?.date },
             { m: METRICS.hrv, value: last.hrv || 0, max: 90, unit: "ms" },
           ].map(({ m, ...ringProps }) => (
             <div
@@ -111,7 +114,7 @@ export default function OverviewTab({ meals, refreshKey }) {
               className="cursor-pointer rounded-xl transition-transform hover:scale-105"
               title={`Ver evolução de ${m.title}`}
             >
-              <Ring {...ringProps} label={m.title} color={m.color} />
+              <Ring {...ringProps} label={m.key === "sleep_hours" && sleepLast ? `${m.title} ${dayMonth(sleepLast.date)}` : m.title} color={m.color} />
             </div>
           ))}
         </div>

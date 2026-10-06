@@ -455,6 +455,22 @@ export const api = {
     return [];
   },
 
+  /* Treinos planeados (Treinus -> SuuntoPlus Guides). */
+  async listPlannedWorkouts() {
+    const sb = supabase();
+    if (!sb) return [];
+    try {
+      const { data, error } = await sb
+        .from("planned_workouts")
+        .select("id,date,name,source,data")
+        .order("date", { ascending: true });
+      if (error) return [];
+      return data || [];
+    } catch (e) {
+      return [];
+    }
+  },
+
   async probeSupabase() {
     const sb = supabase();
     if (!sb) return false;
