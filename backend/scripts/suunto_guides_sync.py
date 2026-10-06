@@ -71,8 +71,11 @@ def sync_guides(conn, dry_run: bool = False) -> int:
     ids = [i["id"] for i in items if i.get("id")]
     if not dry_run:
         with conn.cursor() as cur:
+            # só toucher nas linhas de guia do relógio — as do plano
+            # Treinus (push_status incluído) são do treinus_sync
             cur.execute(
-                "delete from public.planned_workouts where not (id = any(%s))",
+                "delete from public.planned_workouts where source = 'suunto_guide' "
+                "and not (id = any(%s))",
                 (ids,),
             )
     done = 0
