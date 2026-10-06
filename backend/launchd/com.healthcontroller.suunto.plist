@@ -15,7 +15,7 @@
     <key>RunAtLoad</key>
     <true/>
     <key>StartInterval</key>
-    <integer>3600</integer>
+    <integer>1800</integer>
     <key>StandardOutPath</key>
     <string>/Users/thiago/Desktop/healthcontroller/backend/logs/suunto_sync.log</string>
     <key>StandardErrorPath</key>

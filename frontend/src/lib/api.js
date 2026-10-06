@@ -432,13 +432,22 @@ export const api = {
         if (end) q = q.lte("date", end);
         const { data, error } = await q;
         if (error) throw error;
-        /* Um dia pode ter duas fontes (garmin + suunto); preferir suunto. */
+        /* Um dia pode ter duas fontes (garmin + suunto); merge por campo:
+           suunto ganha quando tem valor, garmin preenche o que falta
+           (ex.: suunto tem os passos, garmin o sono daquela manhã). */
         const byDate = new Map();
         for (const d of data || []) {
           const prev = byDate.get(d.date);
-          if (!prev || (prev.source !== "suunto" && d.source === "suunto")) {
-            byDate.set(d.date, d);
+          if (!prev) {
+            byDate.set(d.date, { ...d });
+            continue;
           }
+          const [a, b] = prev.source === "suunto" ? [prev, d] : [d, prev];
+          const merged = { ...a };
+          for (const k of Object.keys(b)) {
+            if (b[k] != null && merged[k] == null) merged[k] = b[k];
+          }
+          byDate.set(d.date, merged);
         }
         return [...byDate.values()];
       } catch (e) {
@@ -469,6 +478,43 @@ export const api = {
       return data || [];
     } catch (e) {
       return [];
+    }
+  },
+
+  /* Hidratação diária (Visão geral, meta 3L). */
+  async getHydration(date) {
+    const sb = supabase();
+    if (!sb) return null;
+    try {
+      const { data, error } = await sb
+        .from("hydration")
+        .select("ml")
+        .eq("date", date)
+        .maybeSingle();
+      if (error) return null;
+      return data ? data.ml : 0;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async addWater(date, ml) {
+    const sb = supabase();
+    if (!sb) return null;
+    try {
+      const { data: cur } = await sb
+        .from("hydration")
+        .select("ml")
+        .eq("date", date)
+        .maybeSingle();
+      const total = Math.max(0, (cur?.ml || 0) + ml);
+      const { error } = await sb
+        .from("hydration")
+        .upsert({ date, ml: total }, { onConflict: "date" });
+      if (error) return null;
+      return total;
+    } catch (e) {
+      return null;
     }
   },
 

@@ -17,6 +17,10 @@ import { addDays, dateKey, dayMonth } from "../lib/garmin.js";
 import MetricDetail from "./MetricDetail.jsx";
 
 /* métricas detalháveis: key = coluna em daily */
+const fmtSleep = (h) => {
+  const m = Math.round(h * 60);
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
+};
 const METRICS = {
   steps: { key: "steps", title: "Passos", unit: "passos", color: C.blue },
   activeCalories: { key: "active_kcal", title: "Calorias ativas", unit: "kcal", color: C.orange },
@@ -105,7 +109,7 @@ export default function OverviewTab({ meals, refreshKey }) {
           {[
             { m: METRICS.steps, value: last.steps || 0, max: 10000, unit: "passos" },
             { m: METRICS.activeCalories, value: last.activeCalories || 0, max: 800, unit: "kcal" },
-            { m: METRICS.sleepHours, value: sleepLast?.sleepHours || 0, max: 9, unit: "horas", date: sleepLast?.date },
+            { m: METRICS.sleepHours, value: sleepLast?.sleepHours || 0, max: 9, unit: "", date: sleepLast?.date, display: sleepLast?.sleepHours ? fmtSleep(sleepLast.sleepHours) : null },
             { m: METRICS.hrv, value: last.hrv || 0, max: 90, unit: "ms" },
           ].map(({ m, ...ringProps }) => (
             <div
@@ -120,6 +124,8 @@ export default function OverviewTab({ meals, refreshKey }) {
         </div>
       </Card>
       )}
+
+      <HydrationCard refreshKey={refreshKey} />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="FC repouso" value={last?.restingHr ?? "—"} unit="bpm" color={C.red} />
@@ -230,5 +236,71 @@ export default function OverviewTab({ meals, refreshKey }) {
       </Card>
       {detail && <MetricDetail metric={detail} onClose={() => setDetail(null)} />}
     </div>
+  );
+}
+
+/* Hidratação diária — registo manual, meta 3L. */
+const WATER_GOAL = 3000;
+function HydrationCard({ refreshKey }) {
+  const [ml, setMl] = useState(null);
+  const today = dateKey(new Date());
+
+  useEffect(() => {
+    api.getHydration(today).then(setMl);
+  }, [refreshKey, today]);
+
+  const add = async (delta) => {
+    setMl((v) => Math.max(0, (v ?? 0) + delta));
+    const total = await api.addWater(today, delta);
+    if (total != null) setMl(total);
+  };
+
+  const pct = Math.min(100, ((ml || 0) / WATER_GOAL) * 100);
+  const goalDone = (ml || 0) >= WATER_GOAL;
+
+  return (
+    <Card className="p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-xs font-semibold" style={{ color: C.text }}>
+          Hidratação · {dayMonth(today)}
+        </h3>
+        <span className="text-xs" style={{ color: C.muted }}>
+          {(ml ?? 0).toLocaleString("pt-BR")} / {WATER_GOAL.toLocaleString("pt-BR")} ml
+        </span>
+      </div>
+      <div
+        className="h-3 overflow-hidden rounded-full"
+        style={{ background: C.card2, border: `1px solid ${C.border}` }}
+      >
+        <div
+          style={{
+            width: `${pct}%`,
+            height: "100%",
+            background: goalDone ? C.teal : C.blue,
+            transition: "width .4s ease",
+          }}
+        />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {[250, 500].map((v) => (
+          <button
+            key={v}
+            onClick={() => add(v)}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
+            style={{ background: C.card, color: C.text, border: `1px solid ${C.border}` }}
+          >
+            +{v} ml
+          </button>
+        ))}
+        <button
+          onClick={() => ml > 0 && add(-ml)}
+          className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
+          style={{ background: C.card, color: C.muted, border: `1px solid ${C.border}` }}
+          title="Zerar o registo de hoje"
+        >
+          Reset
+        </button>
+      </div>
+    </Card>
   );
 }

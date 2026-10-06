@@ -12,7 +12,7 @@ export function Card({ children, style, className = "" }) {
   );
 }
 
-export function Ring({ value, max, label, unit, color, size = 120, icon }) {
+export function Ring({ value, max, label, unit, color, size = 120, icon, display }) {
   const pct = Math.min(1, value / max);
   const r = size / 2 - 9;
   const circ = 2 * Math.PI * r;
@@ -36,7 +36,7 @@ export function Ring({ value, max, label, unit, color, size = 120, icon }) {
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-xl font-bold" style={{ color: C.text }}>
-            {Math.round(value).toLocaleString("pt-BR")}
+            {display ?? Math.round(value).toLocaleString("pt-BR")}
           </span>
           <span className="text-[10px]" style={{ color: C.muted }}>
             {unit}

@@ -160,10 +160,12 @@ def map_daily(entries: dict[str, list[dict]]) -> list[dict]:
         if data.get("ascentMeters"):
             row["floors"] = (row.get("floors") or 0) + data["ascentMeters"]
     for e in entries.get("sleep", []):
-        d = (e.get("timestamp") or e.get("date") or "")[:10]
         data = e.get("entryData") or {}
         if data.get("isNap"):
             continue
+        # atribuir o sono ao dia em que se acorda (bedtimeEnd = manhã);
+        # timestamp/bedtimeStart apontam para a noite anterior
+        d = (data.get("bedtimeEnd") or e.get("timestamp") or "")[:10]
         row = by_day.setdefault(d, {"date": d, "source": "suunto"})
         dur_min = data.get("durationMin") or data.get("sleepMin")
         if dur_min:
