@@ -62,6 +62,18 @@ export default function TrainingTab({ refreshKey }) {
     api.listPlannedWorkouts().then(setPlanned);
   }, [refreshKey]);
 
+  /* enquanto houver treinos futuros por enviar, rebuscar o estado
+     (o worker marca push_status='watch' em até ~5 min) */
+  useEffect(() => {
+    const today = dateKey(new Date());
+    const pending = planned.some(
+      (p) => p.date >= today && !p.push_status,
+    );
+    if (!pending) return;
+    const t = setInterval(() => api.listPlannedWorkouts().then(setPlanned), 30_000);
+    return () => clearInterval(t);
+  }, [planned]);
+
   const period = PERIODS.find((p) => p.id === periodId);
 
   const { start, end, days } = useMemo(() => {
