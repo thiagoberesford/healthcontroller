@@ -471,7 +471,7 @@ export const api = {
     try {
       const { data, error } = await sb
         .from("planned_workouts")
-        .select("id,date,name,source,data")
+        .select("id,date,name,source,data,push_status")
         .eq("source", "treinus")
         .order("date", { ascending: true });
       if (error) return [];
@@ -515,6 +515,19 @@ export const api = {
       return total;
     } catch (e) {
       return null;
+    }
+  },
+
+  /* Push de guia para o relógio: cria pedido na fila; o worker no Mac
+     processa (LaunchAgent a cada 5 min) e marca push_status='watch'. */
+  async pushGuideToWatch(date) {
+    const sb = supabase();
+    if (!sb) return false;
+    try {
+      const { error } = await sb.from("guide_push_queue").insert({ date });
+      return !error;
+    } catch (e) {
+      return false;
     }
   },
 

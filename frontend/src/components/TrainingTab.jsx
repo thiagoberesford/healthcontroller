@@ -454,7 +454,50 @@ export default function TrainingTab({ refreshKey }) {
 function PlannedCard({ planned, openGuide, setOpenGuide }) {
   const today = dateKey(new Date());
   const upcoming = planned.filter((p) => p.date >= today);
+  const [pushing, setPushing] = useState({});
   if (!upcoming.length) return null;
+
+  const push = async (pdate) => {
+    setPushing((s) => ({ ...s, [pdate]: "queued" }));
+    const ok = await api.pushGuideToWatch(pdate);
+    setPushing((s) => ({ ...s, [pdate]: ok ? "queued" : "error" }));
+  };
+
+  const pushBadge = (p) => {
+    const st = p.push_status || pushing[p.date];
+    if (st === "watch")
+      return (
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: C.teal, color: "#04141a" }}>
+          no relógio
+        </span>
+      );
+    if (st === "queued")
+      return (
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: C.card, color: C.muted, border: `1px solid ${C.border}` }}>
+          a enviar…
+        </span>
+      );
+    if (st === "error")
+      return (
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: C.red, color: "#fff" }}>
+          erro
+        </span>
+      );
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          push(p.date);
+        }}
+        className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition-colors"
+        style={{ background: C.card, color: C.text, border: `1px solid ${C.border}` }}
+        title="Enviar esta guia para o relógio (worker no Mac, ~5 min)"
+      >
+        → relógio
+      </button>
+    );
+  };
+
   return (
     <Card className="p-4">
       <h3 className="mb-2 text-xs font-semibold" style={{ color: C.text }}>
@@ -464,7 +507,6 @@ function PlannedCard({ planned, openGuide, setOpenGuide }) {
         {upcoming.map((p) => {
           const open = openGuide === p.id;
           const briefing = p.data?.briefing;
-          const steps = p.data?.steps; // fallback: guides do relógio
           return (
             <div key={p.id} style={{ borderBottom: `1px solid ${C.border}` }}>
               <button
@@ -484,8 +526,11 @@ function PlannedCard({ planned, openGuide, setOpenGuide }) {
                     </span>
                   )}
                 </span>
-                <span className="text-xs" style={{ color: C.muted }}>
-                  {p.data?.time_max ? `~${p.data.time_max}` : ""}
+                <span className="flex items-center gap-2">
+                  <span className="text-xs" style={{ color: C.muted }}>
+                    {p.data?.time_max ? `~${p.data.time_max}` : ""}
+                  </span>
+                  {pushBadge(p)}
                 </span>
               </button>
               {open && briefing && (
@@ -496,9 +541,9 @@ function PlannedCard({ planned, openGuide, setOpenGuide }) {
                   {briefing}
                 </pre>
               )}
-              {open && !briefing && steps?.length > 0 && (
+              {open && !briefing && p.data?.steps?.length > 0 && (
                 <ul className="space-y-1 pb-3">
-                  {steps.map((s, i) => (
+                  {p.data.steps.map((s, i) => (
                     <li key={i} className="flex flex-wrap gap-2 text-xs">
                       <span style={{ color: C.teal }}>{s.title}</span>
                       {s.text && <span style={{ color: C.text }}>{s.text}</span>}
