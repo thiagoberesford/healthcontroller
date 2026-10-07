@@ -498,6 +498,20 @@ export const api = {
     }
   },
 
+  async listHydration(start) {
+    const sb = supabase();
+    if (!sb) return [];
+    try {
+      let q = sb.from("hydration").select("date,ml").order("date", { ascending: true });
+      if (start) q = q.gte("date", start);
+      const { data, error } = await q;
+      if (error) return [];
+      return data || [];
+    } catch (e) {
+      return [];
+    }
+  },
+
   async addWater(date, ml) {
     const sb = supabase();
     if (!sb) return null;

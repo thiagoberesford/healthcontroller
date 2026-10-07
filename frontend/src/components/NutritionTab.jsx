@@ -4,6 +4,7 @@ import {
   BarChart,
   CartesianGrid,
   Legend,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -12,7 +13,7 @@ import {
 import { Card, Ring } from "./ui.jsx";
 import { C, axisProps, tooltipStyle } from "../theme.js";
 import { api } from "../lib/api.js";
-import { addDays, dateKey, dayMonth } from "../lib/garmin.js";
+import { addDays, dateKey, dayMonth, fmtDate } from "../lib/garmin.js";
 
 const todayIso = () => {
   const d = new Date();
@@ -31,8 +32,14 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
   const [showCustom, setShowCustom] = useState(false);
   const [custom, setCustom] = useState({ name: "", kcal: "", protein: "", carbs: "", fat: "", portion: "" });
   const [customMsg, setCustomMsg] = useState(null);
+  const [chartMode, setChartMode] = useState("macros");
+  const [hydration, setHydration] = useState([]);
 
   const loadFoods = () => api.listFoods().then(setFoods);
+
+  useEffect(() => {
+    api.listHydration(addDays(dateKey(new Date()), -13)).then(setHydration);
+  }, [refreshKey]);
 
   useEffect(() => {
     loadFoods();
@@ -173,6 +180,32 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
       );
       return { label: dayMonth(dayIso), ...t };
     });
+  }, [meals]);
+
+  const waterByDay = useMemo(() => {
+    const map = new Map(hydration.map((h) => [h.date, h.ml]));
+    return Array.from({ length: 14 }, (_, i) => {
+      const dayIso = addDays(dateKey(new Date()), -(13 - i));
+      return { label: dayMonth(dayIso), water: map.get(dayIso) || 0 };
+    });
+  }, [hydration]);
+
+  const mealsByDay = useMemo(() => {
+    const groups = [];
+    const byDate = new Map();
+    const sorted = [...meals].sort((a, b) =>
+      `${b.date}${b.time || ""}`.localeCompare(`${a.date}${a.time || ""}`),
+    );
+    for (const m of sorted) {
+      let g = byDate.get(m.date);
+      if (!g) {
+        g = { date: m.date, meals: [] };
+        byDate.set(m.date, g);
+        groups.push(g);
+      }
+      g.meals.push(m);
+    }
+    return groups;
   }, [meals]);
 
   const inputStyle = { background: C.card2, border: `1px solid ${C.border}`, color: C.text };
@@ -384,21 +417,60 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
       </Card>
 
       <Card className="p-4">
-        <h3 className="mb-3 px-2 text-sm font-semibold" style={{ color: C.text }}>
-          Macros por dia (14d)
-        </h3>
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={macroByDay}>
-            <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-            <XAxis dataKey="label" {...axisProps} />
-            <YAxis {...axisProps} />
-            <Tooltip contentStyle={tooltipStyle} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="protein" stackId="m" fill={C.orange} name="Proteína (g)" />
-            <Bar dataKey="carbs" stackId="m" fill={C.blue} name="Carbo (g)" />
-            <Bar dataKey="fat" stackId="m" fill={C.purple} name="Gordura (g)" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        <div className="mb-3 flex items-center justify-between gap-2 px-2">
+          <h3 className="text-sm font-semibold" style={{ color: C.text }}>
+            {chartMode === "macros" ? "Macros por dia (14d)" : "Hidratação (14d)"}
+          </h3>
+          <div className="flex gap-1.5">
+            {[
+              { id: "macros", label: "Macros" },
+              { id: "water", label: "Hidratação" },
+            ].map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setChartMode(m.id)}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors"
+                style={{
+                  background: chartMode === m.id ? C.teal : C.card,
+                  color: chartMode === m.id ? "#04141a" : C.muted,
+                  border: `1px solid ${chartMode === m.id ? C.teal : C.border}`,
+                }}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {chartMode === "macros" ? (
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={macroByDay}>
+              <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+              <XAxis dataKey="label" {...axisProps} />
+              <YAxis {...axisProps} />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="protein" stackId="m" fill={C.orange} name="Proteína (g)" />
+              <Bar dataKey="carbs" stackId="m" fill={C.blue} name="Carbo (g)" />
+              <Bar dataKey="fat" stackId="m" fill={C.purple} name="Gordura (g)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={waterByDay}>
+              <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+              <XAxis dataKey="label" {...axisProps} />
+              <YAxis {...axisProps} unit=" ml" />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v} ml`, "Água"]} />
+              <ReferenceLine
+                y={3000}
+                stroke={C.teal}
+                strokeDasharray="4 4"
+                label={{ value: "meta 3L", position: "insideTopRight", fontSize: 10, fill: C.teal }}
+              />
+              <Bar dataKey="water" fill={C.blue} name="Água (ml)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </Card>
 
       <Card className="p-4">
@@ -409,20 +481,47 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
           {meals.length === 0 && (
             <p className="text-sm" style={{ color: C.muted }}>Nenhuma refeição ainda — usa o campo acima ✨</p>
           )}
-          {meals.slice(0, 12).map((m) => {
-            const t = m.totals || m;
+          {mealsByDay.map((g) => {
+            const dayKcal = Math.round(
+              g.meals.reduce((s, m) => s + (m.totals || m).kcal, 0),
+            );
             return (
-              <div key={m.id} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: C.card2, border: `1px solid ${C.border}` }}>
-                <div>
-                  <div className="text-sm" style={{ color: C.text }}>{m.text}</div>
-                  <div className="text-xs" style={{ color: C.muted }}>{m.date} {m.time} · P{t.protein} C{t.carbs} G{t.fat}</div>
+              <div key={g.date} className="mb-3">
+                <div className="mb-1 flex items-center justify-between px-3">
+                  <span className="text-xs font-semibold" style={{ color: C.teal }}>
+                    {fmtDate(g.date)}
+                  </span>
+                  <span className="text-xs" style={{ color: C.muted }}>
+                    {dayKcal.toLocaleString("pt-BR")} kcal · {g.meals.length} refeiç{g.meals.length === 1 ? "ão" : "ões"}
+                  </span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold" style={{ color: C.orange }}>{t.kcal} kcal</span>
-                  <button onClick={async () => { await api.deleteMeal(m.id); if (removeMeal) removeMeal(m.id); }} className="text-xs" style={{ color: C.red }}>
-                    ✕
-                  </button>
-                </div>
+                {g.meals.map((m) => {
+                  const t = m.totals || m;
+                  return (
+                    <div
+                      key={m.id}
+                      className="mb-1 flex items-center justify-between rounded-lg px-3 py-2"
+                      style={{ background: C.card2, border: `1px solid ${C.border}` }}
+                    >
+                      <div>
+                        <div className="text-sm" style={{ color: C.text }}>{m.text}</div>
+                        <div className="text-xs" style={{ color: C.muted }}>
+                          {m.time} · P{t.protein} C{t.carbs} G{t.fat}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-bold" style={{ color: C.orange }}>{t.kcal} kcal</span>
+                        <button
+                          onClick={async () => { await api.deleteMeal(m.id); if (removeMeal) removeMeal(m.id); }}
+                          className="text-xs"
+                          style={{ color: C.red }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             );
           })}

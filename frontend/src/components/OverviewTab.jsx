@@ -118,7 +118,7 @@ export default function OverviewTab({ meals, refreshKey }) {
               className="cursor-pointer rounded-xl transition-transform hover:scale-105"
               title={`Ver evolução de ${m.title}`}
             >
-              <Ring {...ringProps} label={m.key === "sleep_hours" && sleepLast ? `${m.title} ${dayMonth(sleepLast.date)}` : m.title} color={m.color} />
+              <Ring {...ringProps} label={m.title} color={m.color} />
             </div>
           ))}
         </div>
