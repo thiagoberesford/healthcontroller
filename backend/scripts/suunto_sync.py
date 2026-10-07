@@ -167,9 +167,10 @@ def map_daily(entries: dict[str, list[dict]]) -> list[dict]:
         # timestamp/bedtimeStart apontam para a noite anterior
         d = (data.get("bedtimeEnd") or e.get("timestamp") or "")[:10]
         row = by_day.setdefault(d, {"date": d, "source": "suunto"})
-        dur_min = data.get("durationMin") or data.get("sleepMin")
-        if dur_min:
-            row["sleep_hours"] = round(dur_min / 60, 1)
+        # duracao: campo 'duration' em SEGUNDOS (duracaoMin/sleepMin nao existem)
+        dur_s = data.get("duration") or data.get("durationMin") or data.get("sleepMin")
+        if dur_s:
+            row["sleep_hours"] = round(dur_s / 3600, 1)
         hr = data.get("hrAvg")
         if hr and hr < 5:  # Hz -> bpm ( Sports-Tracker devolve Hz às vezes)
             hr = round(hr * 60)
@@ -252,8 +253,14 @@ def main() -> None:
         print(f"sync desde: {since}")
 
         workouts = [m for w in fetch_workouts(since) if (m := map_workout(w))]
+        # sono: alargar 1 dia para tras — a noite e atribuida ao dia de
+        # acordar (bedtimeEnd), mas a entrada tem timestamp da noite anterior
+        try:
+            sleep_since = (date.fromisoformat(since) - timedelta(days=1)).isoformat()
+        except ValueError:
+            sleep_since = since
         entries = {
-            kind: fetch_wellness(kind, since)
+            kind: fetch_wellness(kind, sleep_since if kind == "sleep" else since)
             for kind in ("activity", "sleep", "recovery")
         }
         daily = map_daily(entries)
