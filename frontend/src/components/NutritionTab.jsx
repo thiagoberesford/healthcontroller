@@ -33,6 +33,7 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
   const [custom, setCustom] = useState({ name: "", kcal: "", protein: "", carbs: "", fat: "", portion: "" });
   const [customMsg, setCustomMsg] = useState(null);
   const [chartMode, setChartMode] = useState("macros");
+  const [openDays, setOpenDays] = useState(() => new Set([todayIso()]));
   const [hydration, setHydration] = useState([]);
 
   const loadFoods = () => api.listFoods().then(setFoods);
@@ -485,17 +486,31 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
             const dayKcal = Math.round(
               g.meals.reduce((s, m) => s + (m.totals || m).kcal, 0),
             );
+            const open = openDays.has(g.date);
             return (
               <div key={g.date} className="mb-3">
-                <div className="mb-1 flex items-center justify-between px-3">
-                  <span className="text-xs font-semibold" style={{ color: C.teal }}>
+                <button
+                  onClick={() =>
+                    setOpenDays((s) => {
+                      const n = new Set(s);
+                      if (n.has(g.date)) n.delete(g.date);
+                      else n.add(g.date);
+                      return n;
+                    })
+                  }
+                  className="mb-1 flex w-full items-center justify-between px-3 py-1 rounded-lg transition-colors"
+                  style={{ background: C.card2, border: `1px solid ${C.border}` }}
+                  title={open ? "Fechar o dia" : "Ver as refeições do dia"}
+                >
+                  <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: C.teal }}>
+                    <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</span>
                     {fmtDate(g.date)}
                   </span>
                   <span className="text-xs" style={{ color: C.muted }}>
                     {dayKcal.toLocaleString("pt-BR")} kcal · {g.meals.length} refeiç{g.meals.length === 1 ? "ão" : "ões"}
                   </span>
-                </div>
-                {g.meals.map((m) => {
+                </button>
+                {open && g.meals.map((m) => {
                   const t = m.totals || m;
                   return (
                     <div
