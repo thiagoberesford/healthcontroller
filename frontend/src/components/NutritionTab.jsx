@@ -3,7 +3,9 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  ComposedChart,
   Legend,
+  Line,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -35,11 +37,18 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
   const [chartMode, setChartMode] = useState("macros");
   const [openDays, setOpenDays] = useState(() => new Set([todayIso()]));
   const [hydration, setHydration] = useState([]);
+  const [daily14, setDaily14] = useState([]);
+  const [weight, setWeight] = useState(null);
 
   const loadFoods = () => api.listFoods().then(setFoods);
 
   useEffect(() => {
     api.listHydration(addDays(dateKey(new Date()), -13)).then(setHydration);
+    api.listGarminDaily(addDays(dateKey(new Date()), -13), dateKey(new Date())).then(setDaily14);
+    api.listBody().then((rows) => {
+      const withWeight = (rows || []).filter((r) => r.weight).slice(-1);
+      if (withWeight.length) setWeight(withWeight[0].weight);
+    });
   }, [refreshKey]);
 
   useEffect(() => {
@@ -190,6 +199,35 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
       return { label: dayMonth(dayIso), water: map.get(dayIso) || 0 };
     });
   }, [hydration]);
+
+  /* metas de perda de peso: ~1800 kcal/dia; proteína 1 g/kg (utilizador);
+     gordura ~0.7 g/kg (piso hormonal); carbo = restante */
+  const GOAL_KCAL = 1800;
+  const goals = useMemo(() => {
+    const w = weight || 97;
+    const protein = Math.round(w * 1);
+    const fat = Math.round(w * 0.7);
+    const carbs = Math.max(50, Math.round((GOAL_KCAL - protein * 4 - fat * 9) / 4));
+    return { kcal: GOAL_KCAL, protein, carbs, fat };
+  }, [weight]);
+
+  const balanceByDay = useMemo(() => {
+    const dailyMap = new Map(daily14.map((d) => [d.date, d.active_kcal || 0]));
+    return Array.from({ length: 14 }, (_, i) => {
+      const dayIso = addDays(dateKey(new Date()), -(13 - i));
+      const dayMeals = meals.filter((m) => m.date === dayIso);
+      const inKcal = Math.round(
+        dayMeals.reduce((s, m) => s + (m.totals || m).kcal || 0, 0),
+      );
+      const outKcal = dailyMap.get(dayIso) || 0;
+      return {
+        label: dayMonth(dayIso),
+        in: inKcal,
+        out: outKcal,
+        net: inKcal - outKcal,
+      };
+    });
+  }, [meals, daily14]);
 
   const mealsByDay = useMemo(() => {
     const groups = [];
@@ -402,30 +440,42 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
       </Card>
 
       <Card className="p-6">
+        <p className="mb-3 text-center text-xs" style={{ color: C.muted }}>
+          Metas de perda de peso: {goals.kcal} kcal · P{goals.protein}g · C{goals.carbs}g · G{goals.fat}g
+          {weight ? ` (peso atual ${weight} kg)` : ""}
+        </p>
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-          <Ring value={todayTotals.kcal} max={2800} label="Ingerido" unit="kcal" color={C.teal} />
-          <Ring value={todayTotals.protein} max={160} label="Proteína" unit="g" color={C.orange} />
-          <Ring value={todayTotals.carbs} max={320} label="Carboidrato" unit="g" color={C.blue} />
-          <Ring value={todayTotals.fat} max={80} label="Gordura" unit="g" color={C.purple} />
+          <Ring value={todayTotals.kcal} max={goals.kcal} label={`Ingerido (${goals.kcal})`} unit="kcal" color={C.teal} />
+          <Ring value={todayTotals.protein} max={goals.protein} label={`Proteína (${goals.protein}g)`} unit="g" color={C.orange} />
+          <Ring value={todayTotals.carbs} max={goals.carbs} label={`Carboidrato (${goals.carbs}g)`} unit="g" color={C.blue} />
+          <Ring value={todayTotals.fat} max={goals.fat} label={`Gordura (${goals.fat}g)`} unit="g" color={C.purple} />
         </div>
         <p className="mt-4 text-center text-xs" style={{ color: C.muted }}>
-          Balanço de hoje:{" "}
+          Balanço de hoje (ingeridas − ativas):{" "}
           <span style={{ color: todayTotals.kcal - (burnedToday || 0) < 0 ? C.green : C.red }}>
             {(todayTotals.kcal - (burnedToday || 0)).toLocaleString("pt-BR")} kcal
           </span>{" "}
-          (ingeridas {todayTotals.kcal} − queimadas {burnedToday ?? "…"})
+          · vs. meta {goals.kcal}:{" "}
+          <span style={{ color: todayTotals.kcal <= goals.kcal ? C.green : C.orange }}>
+            {(todayTotals.kcal - goals.kcal >= 0 ? "+" : "") + (todayTotals.kcal - goals.kcal).toLocaleString("pt-BR")}
+          </span>
         </p>
       </Card>
 
       <Card className="p-4">
         <div className="mb-3 flex items-center justify-between gap-2 px-2">
           <h3 className="text-sm font-semibold" style={{ color: C.text }}>
-            {chartMode === "macros" ? "Macros por dia (14d)" : "Hidratação (14d)"}
+            {chartMode === "macros"
+              ? "Macros por dia (14d)"
+              : chartMode === "water"
+                ? "Hidratação (14d)"
+                : "Balanço diário (14d)"}
           </h3>
           <div className="flex gap-1.5">
             {[
               { id: "macros", label: "Macros" },
               { id: "water", label: "Hidratação" },
+              { id: "balance", label: "Balanço" },
             ].map((m) => (
               <button
                 key={m.id}
@@ -455,7 +505,7 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
               <Bar dataKey="fat" stackId="m" fill={C.purple} name="Gordura (g)" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
-        ) : (
+        ) : chartMode === "water" ? (
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={waterByDay}>
               <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
@@ -470,6 +520,31 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
               />
               <Bar dataKey="water" fill={C.blue} name="Água (ml)" radius={[4, 4, 0, 0]} />
             </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={balanceByDay}>
+              <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+              <XAxis dataKey="label" {...axisProps} />
+              <YAxis {...axisProps} unit=" kcal" />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <ReferenceLine
+                y={0}
+                stroke={C.muted}
+                strokeDasharray="2 2"
+              />
+              <Bar dataKey="in" fill={C.teal} name="Ingeridas (kcal)" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="out" fill={C.orange} name="Ativas queimadas (kcal)" radius={[3, 3, 0, 0]} />
+              <Line
+                type="monotone"
+                dataKey="net"
+                stroke={C.purple}
+                strokeWidth={2}
+                dot={{ r: 2 }}
+                name="Líquido (in − out)"
+              />
+            </ComposedChart>
           </ResponsiveContainer>
         )}
       </Card>
