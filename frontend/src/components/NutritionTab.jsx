@@ -200,12 +200,13 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
     });
   }, [hydration]);
 
-  /* metas de perda de peso: ~1800 kcal/dia; proteína 1 g/kg (utilizador);
-     gordura ~0.7 g/kg (piso hormonal); carbo = restante */
+  /* metas de perda de peso: ~1800 kcal/dia; proteína 1,6 g/kg
+     (Morton et al. 2017: 1,6-2,2 g/kg em défice calórico);
+     gordura ~0,7 g/kg (piso hormonal); carbo = restante */
   const GOAL_KCAL = 1800;
   const goals = useMemo(() => {
     const w = weight || 97;
-    const protein = Math.round(w * 1);
+    const protein = Math.round(w * 1.6);
     const fat = Math.round(w * 0.7);
     const carbs = Math.max(50, Math.round((GOAL_KCAL - protein * 4 - fat * 9) / 4));
     return { kcal: GOAL_KCAL, protein, carbs, fat };
