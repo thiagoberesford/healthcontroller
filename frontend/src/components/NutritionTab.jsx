@@ -44,7 +44,7 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
 
   useEffect(() => {
     api.listHydration(addDays(dateKey(new Date()), -13)).then(setHydration);
-    api.listGarminDaily(addDays(dateKey(new Date()), -13), dateKey(new Date())).then(setDaily14);
+    api.listGarminDaily(SUUNTO_START, dateKey(new Date())).then(setDaily14);
     api.listBody().then((rows) => {
       const withWeight = (rows || []).filter((r) => r.weight).slice(-1);
       if (withWeight.length) setWeight(withWeight[0].weight);
@@ -212,10 +212,16 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
     return { kcal: GOAL_KCAL, protein, carbs, fat };
   }, [weight]);
 
+  /* balanço apenas desde o início do regime Suunto (05/10/2026) */
+  const SUUNTO_START = "2026-10-05";
   const balanceByDay = useMemo(() => {
     const dailyMap = new Map(daily14.map((d) => [d.date, d.active_kcal || 0]));
-    return Array.from({ length: 14 }, (_, i) => {
-      const dayIso = addDays(dateKey(new Date()), -(13 - i));
+    const today = dateKey(new Date());
+    const days = Math.round(
+      (new Date(today) - new Date(SUUNTO_START)) / 86400000,
+    ) + 1;
+    return Array.from({ length: Math.max(1, days) }, (_, i) => {
+      const dayIso = addDays(SUUNTO_START, i);
       const dayMeals = meals.filter((m) => m.date === dayIso);
       const inKcal = Math.round(
         dayMeals.reduce((s, m) => s + (m.totals || m).kcal || 0, 0),
@@ -470,7 +476,7 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
               ? "Macros por dia (14d)"
               : chartMode === "water"
                 ? "Hidratação (14d)"
-                : "Balanço diário (14d)"}
+                : "Balanço diário (desde 05/10)"}
           </h3>
           <div className="flex gap-1.5">
             {[
