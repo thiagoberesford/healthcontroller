@@ -215,10 +215,14 @@ def upsert(conn, workouts: list[dict], daily: list[dict]) -> None:
                  sleep_hours, stress_avg, floors)
             values (%s, 'suunto', %s, %s, %s, %s, %s, %s, %s, %s)
             on conflict (date, source) do update set
-                steps = excluded.steps, active_kcal = excluded.active_kcal,
-                total_kcal = excluded.total_kcal, resting_hr = excluded.resting_hr,
-                hrv = excluded.hrv, sleep_hours = excluded.sleep_hours,
-                stress_avg = excluded.stress_avg, floors = excluded.floors
+                steps = coalesce(excluded.steps, public.daily.steps),
+                active_kcal = coalesce(excluded.active_kcal, public.daily.active_kcal),
+                total_kcal = coalesce(excluded.total_kcal, public.daily.total_kcal),
+                resting_hr = coalesce(excluded.resting_hr, public.daily.resting_hr),
+                hrv = coalesce(excluded.hrv, public.daily.hrv),
+                sleep_hours = coalesce(excluded.sleep_hours, public.daily.sleep_hours),
+                stress_avg = coalesce(excluded.stress_avg, public.daily.stress_avg),
+                floors = coalesce(excluded.floors, public.daily.floors)
             """,
             [
                 (d["date"], d.get("steps"), d.get("active_kcal"), d.get("total_kcal"),
