@@ -49,7 +49,10 @@ async function fsGetToken(): Promise<string | null> {
     }
     clearTimeout(t);
     if (!r.ok) {
-      fsDebug.push(`token HTTP ${r.status}`);
+      fsDebug.push(
+        `token HTTP ${r.status} (client_id começa por "${FS_CLIENT_ID.slice(0, 4)}…", ` +
+        `${FS_CLIENT_ID.length} chars; secret ${FS_CLIENT_SECRET.length} chars)`,
+      );
       return null;
     }
     const doc = await r.json();
@@ -407,7 +410,16 @@ Deno.serve(async (req) => {
     if (unit !== "unidade" && quantity > 0) grams = quantity;
 
     // ---- lookup: base local primeiro; OFF quando há marca ----
-    const term = String(p?.product_search || label).slice(0, 60);
+    let term = String(p?.product_search || label).slice(0, 60);
+    // termo de pesquisa limpo: a marca nunca entra no termo (vem à parte);
+    // "falafel Iglo" + brand="Iglo" -> termo "falafel"
+    const normFn = (x: unknown) =>
+      String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (brand) {
+      const brandWords = new Set(normFn(brand).split(/\s+/).filter(Boolean));
+      const cleaned = term.split(/\s+/).filter((w) => !brandWords.has(normFn(w))).join(" ").trim();
+      if (cleaned) term = cleaned;
+    }
     let origin = "estimate";
     let needsReview = false;
     let macros = {
