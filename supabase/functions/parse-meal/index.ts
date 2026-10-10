@@ -16,15 +16,20 @@ const MAX_OFF_CALLS = 3;
 const FS_CLIENT_ID = Deno.env.get("FATSECRET_CLIENT_ID") ?? "";
 const FS_CLIENT_SECRET = Deno.env.get("FATSECRET_CLIENT_SECRET") ?? "";
 let fsToken: { token: string; exp: number } | null = null;
+const fsDebug: string[] = [];
+const offDebug: string[] = [];
 
 async function fsGetToken(): Promise<string | null> {
-  if (!FS_CLIENT_ID || !FS_CLIENT_SECRET) return null;
+  if (!FS_CLIENT_ID || !FS_CLIENT_SECRET) {
+    fsDebug.push("sem FATSECRET_CLIENT_ID/SECRET nos secrets");
+    return null;
+  }
   if (fsToken && fsToken.exp > Date.now() + 60_000) return fsToken.token;
   const basic = btoa(`${FS_CLIENT_ID}:${FS_CLIENT_SECRET}`);
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), OFF_TIMEOUT_MS);
   try {
-    const r = await fetch("https://oauth.fatsecret.com/connect/token", {
+    let r = await fetch("https://oauth.fatsecret.com/connect/token", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -33,15 +38,31 @@ async function fsGetToken(): Promise<string | null> {
       body: "grant_type=client_credentials&scope=basic",
       signal: ctrl.signal,
     });
+    if (!r.ok) {
+      // fallback: credenciais no body em vez de Basic auth
+      r = await fetch("https://oauth.fatsecret.com/connect/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `grant_type=client_credentials&scope=basic&client_id=${encodeURIComponent(FS_CLIENT_ID)}&client_secret=${encodeURIComponent(FS_CLIENT_SECRET)}`,
+        signal: ctrl.signal,
+      });
+    }
     clearTimeout(t);
-    if (!r.ok) return null;
+    if (!r.ok) {
+      fsDebug.push(`token HTTP ${r.status}`);
+      return null;
+    }
     const doc = await r.json();
     const token = String(doc?.access_token ?? "");
-    if (!token) return null;
+    if (!token) {
+      fsDebug.push("resposta sem access_token");
+      return null;
+    }
     fsToken = { token, exp: Date.now() + (Number(doc?.expires_in) || 3600) * 1000 };
     return token;
-  } catch {
+  } catch (e) {
     clearTimeout(t);
+    fsDebug.push(`token erro: ${String(e).slice(0, 60)}`);
     return null;
   }
 }
@@ -54,45 +75,64 @@ interface FsResult {
 async function fsSearch(term: string, brand: string | null): Promise<FsResult | null> {
   const token = await fsGetToken();
   if (!token) return null;
+  // region=PT para produtos portugueses; sem language (descrições em EN,
+  // mas os regexes abaixo aceitam EN e PT)
   const url =
     `https://platform.fatsecret.com/rest/server.api?method=foods.search` +
-    `&search_expression=${encodeURIComponent(term)}&max_results=20&format=json&region=PT&language=pt`;
+    `&search_expression=${encodeURIComponent(term)}&max_results=20&format=json&region=PT`;
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), OFF_TIMEOUT_MS);
   try {
     const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: ctrl.signal });
     clearTimeout(t);
-    if (!r.ok) return null;
+    if (!r.ok) {
+      fsDebug.push(`search HTTP ${r.status}`);
+      return null;
+    }
     const doc = await r.json();
     const foods = (doc?.foods?.food ?? []) as Record<string, string>[];
     const norm = (x: unknown) =>
       String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const num = (s: string) => parseFloat(s) || 0;
+    const num = (s: string | undefined) => (s ? parseFloat(s) : 0);
+    const grab = (re: RegExp[]) => {
+      for (const r of re) {
+        const m = (d0.match(r) ?? [])[1];
+        if (m) return parseFloat(m);
+      }
+      return 0;
+    };
+    let d0 = "";
     const brandNorm = norm(brand);
     const cands: FsResult[] = [];
     for (const f of foods) {
-      // só descrições por 100g ("Per 100g - Calories: 43.00kcal | Fat: ... | Carbs: ... | Protein: ...")
-      const d = f.food_description ?? "";
-      if (!/Per 100g/i.test(d)) continue;
-      const kcal = num((d.match(/Calories: ([\d.]+)kcal/) ?? [])[1] ?? "");
+      // descrições por 100g, EN ("Per 100g - Calories: …") ou PT ("Por 100g - Calorias: …")
+      d0 = f.food_description ?? "";
+      if (!/Per 100g|Por 100g/i.test(d0)) continue;
+      const kcal = grab([
+        /Calories: ([\d.]+)\s*kcal/i,
+        /Calorias: ([\d.]+)\s*kcal/i,
+        /Calorias: ([\d.]+)\s*Cal/i,
+      ]);
       if (kcal <= 0) continue;
       cands.push({
         kcal: Math.round(kcal),
-        protein: num((d.match(/Protein: ([\d.]+)g/) ?? [])[1] ?? "0"),
-        carbs: num((d.match(/Carbs: ([\d.]+)g/) ?? [])[1] ?? "0"),
-        fat: num((d.match(/Fat: ([\d.]+)g/) ?? [])[1] ?? "0"),
+        protein: grab([/Protein: ([\d.]+)g/i, /Prote[ií]nas?: ([\d.]+)g/i]),
+        carbs: grab([/Carbs: ([\d.]+)g/i, /Carboidratos: ([\d.]+)g/i, /Hidratos?: ([\d.]+)g/i]),
+        fat: grab([/Fat: ([\d.]+)g/i, /Gordura[s]? ?: ([\d.]+)g/i]),
         brand: String(f.brand_name ?? "").trim(),
         name: String(f.food_name ?? "").slice(0, 60),
         brandMatch: !!brand && norm(f.brand_name).includes(brandNorm),
       });
     }
+    fsDebug.push(`search "${term}": ${foods.length} resultados, ${cands.length} com 100g`);
     const best = cands.sort((a, b) =>
       (b.brandMatch ? 1 : 0) - (a.brandMatch ? 1 : 0) ||
       (b.brand ? 1 : 0) - (a.brand ? 1 : 0),
     )[0] ?? null;
     return best;
-  } catch {
+  } catch (e) {
     clearTimeout(t);
+    fsDebug.push(`search erro: ${String(e).slice(0, 60)}`);
     return null;
   }
 }
@@ -236,11 +276,15 @@ async function offSearch(
       const timer = setTimeout(() => ctrl.abort(), OFF_TIMEOUT_MS);
       const r = await fetch(url(t), { headers: { "User-Agent": OFF_UA }, signal: ctrl.signal });
       clearTimeout(timer);
-      if (!r.ok) continue;
+      if (!r.ok) {
+        offDebug.push(`"${t}": HTTP ${r.status}`);
+        continue;
+      }
       const body = await r.json();
       products = ((body?.products ?? []) as OffProduct[]).filter(
         (p) => num(p.nutriments?.["energy-kcal_100g"]) > 0,
       );
+      offDebug.push(`"${t}": ${products.length} resultados`);
       if (products.length) break;
     }
     if (!products.length) {
@@ -458,5 +502,5 @@ Deno.serve(async (req) => {
     });
   }
 
-  return json({ items }, req);
+  return json({ items, _debug: { fatsecret: fsDebug, openfoodfacts: offDebug } }, req);
 });
