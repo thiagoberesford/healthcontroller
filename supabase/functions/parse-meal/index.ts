@@ -49,9 +49,13 @@ async function fsGetToken(): Promise<string | null> {
     }
     clearTimeout(t);
     if (!r.ok) {
+      const errBody = await r.text().catch(() => "");
       fsDebug.push(
-        `token HTTP ${r.status} (client_id começa por "${FS_CLIENT_ID.slice(0, 4)}…", ` +
-        `${FS_CLIENT_ID.length} chars; secret ${FS_CLIENT_SECRET.length} chars)`,
+        `token HTTP ${r.status}: ${errBody.slice(0, 120)}`,
+      );
+      fsDebug.push(
+        `(client_id "${FS_CLIENT_ID.slice(0, 4)}…" ${FS_CLIENT_ID.length} chars; ` +
+        `secret ${FS_CLIENT_SECRET.length} chars)`,
       );
       return null;
     }
@@ -277,10 +281,21 @@ async function offSearch(
       : [["pt.openfoodfacts.org", term]];
     let products: OffProduct[] = [];
     for (const [host, t] of attempts) {
+      if (products.length === 0 && offDebug.length > 0) {
+        await new Promise((r) => setTimeout(r, 400)); // respeitar rate limit da OFF
+      }
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), OFF_TIMEOUT_MS);
-      const r = await fetch(url(host, t), { headers: { "User-Agent": OFF_UA }, signal: ctrl.signal });
+      let r = await fetch(url(host, t), { headers: { "User-Agent": OFF_UA }, signal: ctrl.signal });
       clearTimeout(timer);
+      if (r.status === 503) {
+        // 503 costuma ser transitorio: uma retry curta
+        await new Promise((res) => setTimeout(res, 500));
+        const ctrl2 = new AbortController();
+        const timer2 = setTimeout(() => ctrl2.abort(), OFF_TIMEOUT_MS);
+        r = await fetch(url(host, t), { headers: { "User-Agent": OFF_UA }, signal: ctrl2.signal });
+        clearTimeout(timer2);
+      }
       if (!r.ok) {
         offDebug.push(`"${t}" @${host.split(".")[0]}: HTTP ${r.status}`);
         continue;
