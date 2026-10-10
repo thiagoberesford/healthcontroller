@@ -388,7 +388,12 @@ Deno.serve(async (req) => {
         } catch {}
         result = await runner(auth, args);
       }
-      messages.push({ role: "tool", name, content: JSON.stringify(result) });
+      messages.push({
+        role: "tool",
+        tool_call_id: String(c?.id ?? ""),
+        name,
+        content: JSON.stringify(result),
+      });
     }
   }
 
@@ -402,7 +407,8 @@ Deno.serve(async (req) => {
       try {
         const r = await mistralChat(key, messages, true);
         if (!r.ok || !r.body) {
-          send({ type: "error", error: `mistral ${r.status}` });
+          const detail = await r.text().catch(() => "");
+          send({ type: "error", error: `mistral ${r.status}: ${detail.slice(0, 200)}` });
           controller.close();
           return;
         }
