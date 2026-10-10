@@ -153,6 +153,7 @@ export default function App() {
 
       <footer className="mt-10 pb-6 text-center text-xs" style={{ color: C.muted }}>
         Dados Garmin no Supabase (acesso com login) · refeições no navegador/backend local · Suunto na Fase 3
+        <span className="ml-2 opacity-50">· build 2026-10-11a</span>
       </footer>
 
       {SUPABASE_ENABLED && user && <CoachChat />}
