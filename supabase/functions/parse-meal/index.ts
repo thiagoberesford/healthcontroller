@@ -115,11 +115,21 @@ async function fsSearch(term: string, brand: string | null): Promise<FsResult | 
     return 0;
   };
   const brandNorm = norm(brand);
+  // relevância: o candidato tem de partilhar pelo menos uma palavra
+  // significativa (>=4 chars) com o termo — a busca difusa do FatSecret
+  // devolve lixo ("hamburger vegan" -> "Herbes de Provence")
+  const termWords = new Set(
+    norm(term).split(/\s+/).filter((w) => w.length >= 4),
+  );
   const cands: FsResult[] = [];
   for (const f of foods) {
-    // descrições por 100g, EN ("Per 100g - Calories: …") ou PT ("Por 100g - Calorias: …")
     const d = f.food_description ?? "";
     if (!/Per 100g|Por 100g/i.test(d)) continue;
+    const nameNorm = norm(`${f.food_name ?? ""} ${f.brand_name ?? ""}`);
+    const relevant =
+      (!!brand && norm(f.brand_name).includes(brandNorm)) ||
+      nameNorm.split(/\s+/).some((w) => termWords.has(w));
+    if (!relevant) continue;
     const kcal = grab(d, [
       /Calories: ([\d.]+)\s*kcal/i,
       /Calorias: ([\d.]+)\s*kcal/i,
@@ -136,7 +146,9 @@ async function fsSearch(term: string, brand: string | null): Promise<FsResult | 
       brandMatch: !!brand && norm(f.brand_name).includes(brandNorm),
     });
   }
-  fsDebug.push(`search "${term}": ${foods.length} resultados, ${cands.length} com 100g`);
+  fsDebug.push(
+    `search "${term}": ${foods.length} resultados, ${cands.length} relevantes com 100g`,
+  );
   const best = cands.sort((a, b) =>
     (b.brandMatch ? 1 : 0) - (a.brandMatch ? 1 : 0) ||
     (b.brand ? 1 : 0) - (a.brand ? 1 : 0),
