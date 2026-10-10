@@ -263,28 +263,30 @@ async function offSearch(
   const norm = (x: unknown) =>
     String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const num = (v: unknown) => (v == null ? 0 : Number(v) || 0);
-  const url = (t: string) =>
-    `https://pt.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(t)}` +
+  const url = (host: string, t: string) =>
+    `https://${host}/cgi/search.pl?search_terms=${encodeURIComponent(t)}` +
     `&json=1&page_size=20&fields=product_name,brands,countries,serving_size,nutriments`;
 
   try {
-    // 1ª tentativa: produto + marca; sem resultados, só o produto (fallback)
-    const attempts = brand ? [`${term} ${brand}`, term] : [term];
+    // 1ª tentativa: produto + marca no pt.; fallback: termo no pt., depois world
+    const attempts: Array<[string, string]> = brand
+      ? [["pt.openfoodfacts.org", `${term} ${brand}`], ["pt.openfoodfacts.org", term], ["world.openfoodfacts.org", term]]
+      : [["pt.openfoodfacts.org", term]];
     let products: OffProduct[] = [];
-    for (const t of attempts) {
+    for (const [host, t] of attempts) {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), OFF_TIMEOUT_MS);
-      const r = await fetch(url(t), { headers: { "User-Agent": OFF_UA }, signal: ctrl.signal });
+      const r = await fetch(url(host, t), { headers: { "User-Agent": OFF_UA }, signal: ctrl.signal });
       clearTimeout(timer);
       if (!r.ok) {
-        offDebug.push(`"${t}": HTTP ${r.status}`);
+        offDebug.push(`"${t}" @${host.split(".")[0]}: HTTP ${r.status}`);
         continue;
       }
       const body = await r.json();
       products = ((body?.products ?? []) as OffProduct[]).filter(
         (p) => num(p.nutriments?.["energy-kcal_100g"]) > 0,
       );
-      offDebug.push(`"${t}": ${products.length} resultados`);
+      offDebug.push(`"${t}" @${host.split(".")[0]}: ${products.length} resultados`);
       if (products.length) break;
     }
     if (!products.length) {

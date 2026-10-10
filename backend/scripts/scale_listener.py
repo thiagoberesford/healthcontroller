@@ -48,6 +48,9 @@ DB_URL = os.getenv("SUPABASE_DB_URL", "")
 SCALE_AGE = int(os.getenv("SCALE_AGE", "36"))
 SCALE_HEIGHT_CM = int(os.getenv("SCALE_HEIGHT_CM", "180"))
 SCALE_SEX = os.getenv("SCALE_SEX", "male")  # male | female
+# validação: fora desta janela o anúncio é lixo (ex.: peso 0 não-estabilizado)
+SCALE_MIN_KG = float(os.getenv("SCALE_MIN_KG", "30"))
+SCALE_MAX_KG = float(os.getenv("SCALE_MAX_KG", "200"))
 # 1: uma pesagem por dia e só com composição completa substitui um registo
 # completo; pesagens sem impedância ficam apenas no scale_log.jsonl
 SCALE_KEEP_COMPLETE = os.getenv("SCALE_KEEP_COMPLETE", "1") == "1"
@@ -301,6 +304,9 @@ class ScaleListener:
         if not m:
             print("  anúncio não-estabilizado/ignorado", flush=True)
             return
+        if not (SCALE_MIN_KG <= m["weight"] <= SCALE_MAX_KG):
+            print(f"  peso implausível ({m['weight']} kg) — anúncio ignorado", flush=True)
+            return
 
         now = datetime.now()
         minute_key = f"{now:%Y-%m-%d %H:%M}"
@@ -335,6 +341,10 @@ class ScaleListener:
             print("  DRY-RUN: nada escrito", flush=True)
             return
         append_log(entry)
+        if not m.get("impedance"):
+            # só pesagens com dados de impedância vão para o site
+            print("  sem impedância — fica apenas no log local", flush=True)
+            return
         try:
             save_to_supabase(entry)
         except Exception as e:
