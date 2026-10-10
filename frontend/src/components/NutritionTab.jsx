@@ -32,6 +32,8 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
   const [custom, setCustom] = useState({ name: "", kcal: "", protein: "", carbs: "", fat: "", portion: "" });
   const [customMsg, setCustomMsg] = useState(null);
   const [chartMode, setChartMode] = useState("macros");
+  const [manualEdit, setManualEdit] = useState(null); // {i, kcal, protein, carbs, fat}
+  const [manualMsg, setManualMsg] = useState(null);
   const [openDays, setOpenDays] = useState(() => new Set([todayIso()]));
   const [foods, setFoods] = useState([]);
   const [hydration, setHydration] = useState([]);
@@ -150,6 +152,65 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
     if (addMeal) addMeal();
     setInput("");
     setPreview(null);
+  };
+
+  /* definir manualmente os valores de um item estimado (≈) e guardar
+     na base pessoal — as próximas vezes sai local */
+  const saveManual = async () => {
+    const { i, kcal: k, protein: pr, carbs: cb, fat: ft } = manualEdit;
+    const num = (v) => parseFloat(String(v || "0").replace(",", ".")) || 0;
+    const kcal = num(k);
+    if (!kcal) {
+      setManualMsg("As kcal por 100 g são obrigatórias.");
+      return;
+    }
+    const it = preview.items[i];
+    const saved = await api.addFood({
+      name: it.label,
+      brand: it.brand || "",
+      kcal,
+      protein: num(pr),
+      carbs: num(cb),
+      fat: num(ft),
+      portion: 100,
+    });
+    if (!saved) {
+      setManualMsg("Não foi possível guardar (Supabase?).");
+      return;
+    }
+    const grams = it.grams || it.quantity || 100;
+    const s = (v) => (grams > 0 ? (v * grams) / 100 : 0);
+    const items = preview.items.map((x, j) =>
+      j === i
+        ? {
+            ...x,
+            kcal_100: kcal,
+            protein_100: num(pr),
+            carbs_100: num(cb),
+            fat_100: num(ft),
+            kcal: Math.round(s(kcal)),
+            protein: +s(num(pr)).toFixed(1),
+            carbs: +s(num(cb)).toFixed(1),
+            fat: +s(num(ft)).toFixed(1),
+            origin: "manual",
+            estimated: false,
+            needs_review: false,
+          }
+        : x,
+    );
+    const totals = items.reduce(
+      (acc, x) => ({
+        kcal: acc.kcal + (x.kcal || 0),
+        protein: +(acc.protein + (x.protein || 0)).toFixed(1),
+        carbs: +(acc.carbs + (x.carbs || 0)).toFixed(1),
+        fat: +(acc.fat + (x.fat || 0)).toFixed(1),
+      }),
+      { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+    );
+    setPreview({ ...preview, items, totals: { label: "Total", ...totals } });
+    setManualEdit(null);
+    setManualMsg(null);
+    loadFoods();
   };
 
   const todayMeals = meals.filter((m) => m.date === todayIso());
@@ -446,48 +507,108 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
                       });
                     };
                     return (
-                      <div key={i} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                        <span style={{ color: C.text }}>
-                          {(it.origin === "openfoodfacts" || it.origin === "fatsecret") && (
-                            <span
-                              title={
-                                it.origin === "fatsecret"
-                                  ? "valores reais do FatSecret"
-                                  : "valores reais do Open Food Facts"
-                              }
-                              style={{ color: C.green }}
-                            >
-                              {it.origin === "fatsecret" ? "FS" : "OFF"}{" "}
-                            </span>
-                          )}
-                          {it.estimated && (
-                            <span title="estimado pelo LLM — sem produto na base" style={{ color: C.orange }}>≈ </span>
-                          )}
-                          {it.needs_review && <span title="unidade ou quantidade incerta — confirma" style={{ color: C.orange }}>⚠ </span>}
-                          {it.label}
-                        </span>
-                        <span className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            className="w-16 rounded-lg px-2 py-1 text-xs outline-none"
-                            value={it.unit === "unidade" ? it.quantity : it.grams}
-                            onChange={(e) => setQty(it.unit || "g", e.target.value)}
-                            style={inputStyle}
-                          />
-                          <select
-                            className="rounded-lg px-1.5 py-1 text-xs outline-none"
-                            value={it.unit || "g"}
-                            onChange={(e) => setQty(e.target.value, it.unit === "unidade" ? it.quantity : it.grams)}
-                            style={inputStyle}
-                          >
-                            <option value="g">g</option>
-                            <option value="ml">ml</option>
-                            <option value="unidade">un.</option>
-                          </select>
-                          <span className="text-xs" style={{ color: C.muted }}>
-                            {it.kcal} kcal · P{it.protein} C{it.carbs} G{it.fat}
+                      <div key={i}>
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                          <span style={{ color: C.text }}>
+                            {(it.origin === "openfoodfacts" || it.origin === "fatsecret") && (
+                              <span
+                                title={
+                                  it.origin === "fatsecret"
+                                    ? "valores reais do FatSecret"
+                                    : "valores reais do Open Food Facts"
+                                }
+                                style={{ color: C.green }}
+                              >
+                                {it.origin === "fatsecret" ? "FS" : "OFF"}{" "}
+                              </span>
+                            )}
+                            {it.estimated && (
+                              <span title="estimado pelo LLM — sem produto na base" style={{ color: C.orange }}>≈ </span>
+                            )}
+                            {it.needs_review && <span title="unidade ou quantidade incerta — confirma" style={{ color: C.orange }}>⚠ </span>}
+                            {it.label}
                           </span>
-                        </span>
+                          <span className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              className="w-16 rounded-lg px-2 py-1 text-xs outline-none"
+                              value={it.unit === "unidade" ? it.quantity : it.grams}
+                              onChange={(e) => setQty(it.unit || "g", e.target.value)}
+                              style={inputStyle}
+                            />
+                            <select
+                              className="rounded-lg px-1.5 py-1 text-xs outline-none"
+                              value={it.unit || "g"}
+                              onChange={(e) => setQty(e.target.value, it.unit === "unidade" ? it.quantity : it.grams)}
+                              style={inputStyle}
+                            >
+                              <option value="g">g</option>
+                              <option value="ml">ml</option>
+                              <option value="unidade">un.</option>
+                            </select>
+                            <span className="text-xs" style={{ color: C.muted }}>
+                              {it.kcal} kcal · P{it.protein} C{it.carbs} G{it.fat}
+                            </span>
+                            {it.estimated && (
+                              <button
+                                onClick={() => setManualEdit({ i, kcal: "", protein: "", carbs: "", fat: "" })}
+                                className="rounded-lg px-2 py-1 text-xs font-semibold"
+                                style={{ background: C.card, border: `1px solid ${C.border}`, color: C.orange }}
+                                title="Definir os valores reais deste alimento (fica guardado)"
+                              >
+                                ✎ definir
+                              </button>
+                            )}
+                          </span>
+                        </div>
+                        {manualEdit?.i === i && (
+                          <div className="mt-2 rounded-lg p-2" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                            <p className="mb-2 text-xs" style={{ color: C.muted }}>
+                              Valores por 100 g/ml de <b style={{ color: C.text }}>{it.label}</b> — ficam guardados na tua base:
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <input
+                                type="number"
+                                className="w-20 rounded-lg px-2 py-1 text-xs outline-none"
+                                placeholder="kcal/100"
+                                value={manualEdit.kcal}
+                                onChange={(e) => setManualEdit({ ...manualEdit, kcal: e.target.value })}
+                                style={inputStyle}
+                              />
+                              <input
+                                type="number"
+                                className="w-20 rounded-lg px-2 py-1 text-xs outline-none"
+                                placeholder="P g/100"
+                                value={manualEdit.protein}
+                                onChange={(e) => setManualEdit({ ...manualEdit, protein: e.target.value })}
+                                style={inputStyle}
+                              />
+                              <input
+                                type="number"
+                                className="w-20 rounded-lg px-2 py-1 text-xs outline-none"
+                                placeholder="C g/100"
+                                value={manualEdit.carbs}
+                                onChange={(e) => setManualEdit({ ...manualEdit, carbs: e.target.value })}
+                                style={inputStyle}
+                              />
+                              <input
+                                type="number"
+                                className="w-20 rounded-lg px-2 py-1 text-xs outline-none"
+                                placeholder="G g/100"
+                                value={manualEdit.fat}
+                                onChange={(e) => setManualEdit({ ...manualEdit, fat: e.target.value })}
+                                style={inputStyle}
+                              />
+                              <button onClick={saveManual} className="rounded-lg px-3 py-1.5 text-xs font-semibold" style={{ background: C.green, color: "#052e12" }}>
+                                Guardar
+                              </button>
+                              <button onClick={() => { setManualEdit(null); setManualMsg(null); }} className="text-xs" style={{ color: C.muted }}>
+                                cancelar
+                              </button>
+                            </div>
+                            {manualMsg && <p className="mt-1 text-xs" style={{ color: C.red }}>{manualMsg}</p>}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

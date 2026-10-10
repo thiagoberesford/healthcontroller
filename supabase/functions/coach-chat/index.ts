@@ -32,7 +32,8 @@ Contexto do utilizador:
 - Balanço nutricional = kcal ingeridas − calorias ativas; meta de perda de peso: 1800 kcal/dia
 - Sono/HRV/FC repouso vêm do daily; peso e composição do body_metrics
 - Treinos planeados (Treinus) em planned_workouts
-- Ritmo de corrida: se pedirem, calcula min/km a partir de duration_s e distance_km`;
+- Ritmo de corrida: se pedirem, calcula min/km a partir de duration_s e distance_km
+- Para splits/intervalos/FC por km de um treino específico, usa query_activity_detail com a data`;
 
 const TOOLS = [
   {
@@ -95,6 +96,21 @@ const TOOLS = [
           date: { type: "string", description: "YYYY-MM-DD de um dia específico (opcional)" },
           days: { type: "number", description: "n.º de dias para trás (por defeito 7)" },
         },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "query_activity_detail",
+      description:
+        "Detalhes de um treino de um dia: splits por km (ritmo, FC média/máx, elevação, cadência), FC média global. Usa quando pedirem intervalos, splits, ritmo por km, FC do treino.",
+      parameters: {
+        type: "object",
+        properties: {
+          date: { type: "string", description: "YYYY-MM-DD do treino" },
+        },
+        required: ["date"],
       },
     },
   },
@@ -282,6 +298,49 @@ const TOOL_RUNNERS: Record<string, (auth: string, args: Record<string, unknown>)
       auth, `hydration?select=date,ml&date=gte.${addDays(-days + 1)}&order=date.asc&limit=100`,
     )) ?? [];
     return { goal_ml: 3000, days: rows };
+  },
+
+  async query_activity_detail(auth, a) {
+    const day = String(a.date || today());
+    const acts = (await pg(
+      auth,
+      `activities?select=source,source_key,name,type,start,distance_km,duration_s,kcal,avg_hr` +
+        `&and=(start.gte.${day} 00:00:00,start.lte.${day} 23:59:59)&order=start.asc`,
+    )) ?? [];
+    const out = [];
+    for (const act of acts) {
+      const det = (await pg(
+        auth,
+        `activity_details?select=data&source=eq.${act.source}&source_key=eq.${act.source_key}`,
+      )) ?? [];
+      const data = (det[0]?.data ?? {}) as Record<string, unknown>;
+      const splits = (data.splits ?? []) as Record<string, unknown>[];
+      const hr = (data.hr ?? []) as number[][];
+      const hrVals = hr.map((p) => p[1]).filter((v) => v > 0);
+      out.push({
+        name: act.name,
+        type: act.type,
+        start: act.start,
+        km: act.distance_km,
+        duration_s: act.duration_s,
+        kcal: act.kcal,
+        avg_hr_activity: act.avg_hr ?? null,
+        splits_km: splits.map((s, i) => ({
+          km: i + 1,
+          distance_m: s.distance,
+          duration_s: s.duration,
+          avg_hr: s.avg_hr ?? null,
+          max_hr: s.max_hr ?? null,
+          elev_gain_m: s.elev_gain ?? null,
+          cadence_spm: s.cadence ?? null,
+        })),
+        hr_points: hr.length,
+        hr_avg_series: hrVals.length
+          ? Math.round(hrVals.reduce((s: number, v: number) => s + v, 0) / hrVals.length)
+          : null,
+      });
+    }
+    return { date: day, activities: out };
   },
 
   async get_personal_records(auth) {
