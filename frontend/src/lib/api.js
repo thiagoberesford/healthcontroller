@@ -543,6 +543,48 @@ export const api = {
     }
   },
 
+  /* Coach chat: streaming SSE; onEvent recebe {type:"tools"|"token"|"done"|"error"} */
+  async coachChat(question, history, onEvent) {
+    const sb = supabase();
+    if (!sb) return onEvent({ type: "error", error: "Supabase indisponível" });
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data?.session?.access_token;
+      if (!token) return onEvent({ type: "error", error: "sessão expirada" });
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/coach-chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ question, history: history.slice(-8) }),
+      });
+      if (!r.ok || !r.body) {
+        const detail = await r.text().catch(() => "");
+        return onEvent({ type: "error", error: `coach-chat ${r.status}: ${detail.slice(0, 120)}` });
+      }
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() ?? "";
+        for (const part of parts) {
+          const line = part.split("\n").find((l) => l.startsWith("data:"));
+          if (!line) continue;
+          try {
+            onEvent(JSON.parse(line.slice(5).trim()));
+          } catch {}
+        }
+      }
+    } catch (e) {
+      onEvent({ type: "error", error: String(e).slice(0, 120) });
+    }
+  },
+
   async probeSupabase() {
     const sb = supabase();
     if (!sb) return false;
