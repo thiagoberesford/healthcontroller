@@ -7,6 +7,7 @@
 const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
 const MODEL = "mistral-small-latest";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const OFF_UA = "HealthController/1.0 (uso pessoal; github.com/thiagoberesford/healthcontroller)";
 const OFF_TIMEOUT_MS = 3000;
 const MAX_OFF_CALLS = 3;
@@ -79,7 +80,7 @@ async function localFoodSearch(
   });
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/foods?${q}`, {
-      headers: { Authorization: auth, apikey: auth },
+      headers: { Authorization: auth, apikey: SUPABASE_ANON_KEY },
     });
     if (!r.ok) return null;
     const rows: Record<string, unknown>[] = await r.json();
@@ -104,7 +105,7 @@ async function upsertFood(auth: string, f: Record<string, unknown>): Promise<voi
       method: "POST",
       headers: {
         Authorization: auth,
-        apikey: auth,
+        apikey: SUPABASE_ANON_KEY,
         "Content-Type": "application/json",
         Prefer: "resolution=merge-duplicates",
       },
@@ -129,31 +130,47 @@ interface OffProduct {
 
 async function offSearch(
   term: string,
-): Promise<{ kcal: number; protein: number; carbs: number; fat: number; brand: string; name: string } | null> {
-  const key = term.toLowerCase().trim();
+  brand: string | null,
+): Promise<{ kcal: number; protein: number; carbs: number; fat: number; brand: string; name: string; brandMatch: boolean } | null> {
+  const key = `${term.toLowerCase().trim()}|${(brand ?? "").toLowerCase()}`;
   if (offCache.has(key)) return offCache.get(key) ?? null;
-  // pt.openfoodfacts.org: produtos PT primeiro (world devolve 503 com frequência)
-  const url =
-    `https://pt.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(term)}` +
+
+  const norm = (x: unknown) =>
+    String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const num = (v: unknown) => (v == null ? 0 : Number(v) || 0);
+  const url = (t: string) =>
+    `https://pt.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(t)}` +
     `&json=1&page_size=20&fields=product_name,brands,countries,serving_size,nutriments`;
+
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), OFF_TIMEOUT_MS);
-    const r = await fetch(url, { headers: { "User-Agent": OFF_UA }, signal: ctrl.signal });
-    clearTimeout(t);
-    if (!r.ok) throw new Error(`off ${r.status}`);
-    const body = await r.json();
-    const products = (body?.products ?? []) as OffProduct[];
-    const norm = (x: unknown) =>
-      String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const num = (v: unknown) => (v == null ? 0 : Number(v) || 0);
-    const usable = products.filter((p) => num(p.nutriments?.["energy-kcal_100g"]) > 0);
+    // 1ª tentativa: produto + marca; sem resultados, só o produto (fallback)
+    const attempts = brand ? [`${term} ${brand}`, term] : [term];
+    let products: OffProduct[] = [];
+    for (const t of attempts) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), OFF_TIMEOUT_MS);
+      const r = await fetch(url(t), { headers: { "User-Agent": OFF_UA }, signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!r.ok) continue;
+      const body = await r.json();
+      products = ((body?.products ?? []) as OffProduct[]).filter(
+        (p) => num(p.nutriments?.["energy-kcal_100g"]) > 0,
+      );
+      if (products.length) break;
+    }
+    if (!products.length) {
+      offCache.set(key, null);
+      return null;
+    }
+
     const firstTerm = norm(term).split(" ")[0] ?? "";
-    const best = usable
+    const brandNorm = norm(brand);
+    const best = products
       .map((p) => {
         const n = p.nutriments!;
         const pt = norm(p.countries).includes("portugal");
         const nameHit = norm(p.product_name).includes(firstTerm);
+        const brandMatch = !!brand && norm(p.brands).includes(brandNorm);
         const complete =
           num(n["proteins_100g"]) > 0 && num(n["carbohydrates_100g"]) >= 0 && num(n["fat_100g"]) > 0;
         return {
@@ -163,10 +180,13 @@ async function offSearch(
           fat: +num(n["fat_100g"]).toFixed(1),
           brand: String(p.brands ?? "").split(",")[0]?.trim() ?? "",
           name: String(p.product_name ?? "").slice(0, 60),
-          score: (nameHit ? 2 : 0) + (pt ? 2 : 0) + (complete ? 1 : 0),
+          brandMatch,
+          score: (brandMatch ? 5 : 0) + (nameHit ? 2 : 0) + (pt ? 2 : 0) + (complete ? 1 : 0),
         };
       })
       .sort((a, b) => b.score - a.score)[0] ?? null;
+    // com marca indicada mas sem produto dessa marca: devolver o genérico
+    // com brandMatch=false (o caller marca needs_review para o user confirmar)
     offCache.set(key, best);
     return best;
   } catch {
@@ -282,17 +302,18 @@ Deno.serve(async (req) => {
     } else if (brand && offCalls < MAX_OFF_CALLS) {
       // só itens com marca vão à OFF
       offCalls++;
-      const off = await offSearch(`${term} ${brand}`.trim());
+      const off = await offSearch(term, brand);
       if (off && off.kcal > 0) {
         origin = "openfoodfacts";
         macros = { kcal_100: off.kcal, protein_100: off.protein, carbs_100: off.carbs, fat_100: off.fat };
         foodName = off.name || label;
         foodId = `off-${slug(`${off.name} ${off.brand}`)}`;
+        needsReview = !off.brandMatch; // produto genérico no lugar da marca pedida
         // enriquecer a base: próxima vez sai local (JWT do user; nunca service key)
         await upsertFood(auth, {
           id: foodId,
           name: (off.name || label).slice(0, 60),
-          brand: off.brand || brand,
+          brand: off.brandMatch ? (off.brand || brand) : (off.brand || brand),
           category: storeHint ? `continente:${storeHint}` : "",
           kcal: off.kcal,
           protein: off.protein,
