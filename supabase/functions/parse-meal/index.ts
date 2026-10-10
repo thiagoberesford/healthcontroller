@@ -12,64 +12,80 @@ const OFF_UA = "HealthController/1.0 (uso pessoal; github.com/thiagoberesford/he
 const OFF_TIMEOUT_MS = 3000;
 const MAX_OFF_CALLS = 3;
 
-/* ---------- FatSecret (opcional; FATSECRET_CLIENT_ID/SECRET em secrets) ---------- */
-const FS_CLIENT_ID = Deno.env.get("FATSECRET_CLIENT_ID") ?? "";
-const FS_CLIENT_SECRET = Deno.env.get("FATSECRET_CLIENT_SECRET") ?? "";
-let fsToken: { token: string; exp: number } | null = null;
+/* ---------- FatSecret (OAuth 1.0a HMAC-SHA1; CONSUMER_KEY/SECRET em secrets) ---------- */
+const FS_CLIENT_ID =
+  Deno.env.get("FATSECRET_CONSUMER_KEY") ?? Deno.env.get("FATSECRET_CLIENT_ID") ?? "";
+const FS_CLIENT_SECRET =
+  Deno.env.get("FATSECRET_CONSUMER_SECRET") ?? Deno.env.get("FATSECRET_CLIENT_SECRET") ?? "";
 const fsDebug: string[] = [];
 const offDebug: string[] = [];
 
-async function fsGetToken(): Promise<string | null> {
+/* percent-encoding RFC 3986 (encodeURIComponent deixa !'()* por codificar) */
+const enc3986 = (s: string) =>
+  encodeURIComponent(String(s)).replace(
+    /[!'()*]/g,
+    (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase(),
+  );
+
+async function hmacSha1Base64(key: string, msg: string): Promise<string> {
+  const k = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(key),
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(msg));
+  let bin = "";
+  for (const b of new Uint8Array(sig)) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+/* chamada assinada à REST API (OAuth 1.0a "signed request") */
+async function fsCall(params: Record<string, string | number>): Promise<Record<string, unknown> | null> {
   if (!FS_CLIENT_ID || !FS_CLIENT_SECRET) {
-    fsDebug.push("sem FATSECRET_CLIENT_ID/SECRET nos secrets");
+    fsDebug.push("sem FATSECRET_CONSUMER_KEY/SECRET nos secrets");
     return null;
   }
-  if (fsToken && fsToken.exp > Date.now() + 60_000) return fsToken.token;
-  const basic = btoa(`${FS_CLIENT_ID}:${FS_CLIENT_SECRET}`);
+  const url = "https://platform.fatsecret.com/rest/server.api";
+  const p: Record<string, string> = {
+    oauth_consumer_key: FS_CLIENT_ID,
+    oauth_nonce: crypto.randomUUID().replace(/-/g, ""),
+    oauth_signature_method: "HMAC-SHA1",
+    oauth_timestamp: String(Math.floor(Date.now() / 1000)),
+    oauth_version: "1.0",
+    format: "json",
+  };
+  for (const [k, v] of Object.entries(params)) p[k] = String(v);
+  const paramString = Object.keys(p).sort()
+    .map((k) => `${enc3986(k)}=${enc3986(p[k])}`)
+    .join("&");
+  const baseStr = `POST&${enc3986(url)}&${enc3986(paramString)}`;
+  const sig = await hmacSha1Base64(`${FS_CLIENT_SECRET}&`, baseStr);
+  const body = new URLSearchParams({ ...p, oauth_signature: sig }).toString();
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), OFF_TIMEOUT_MS);
   try {
-    let r = await fetch("https://oauth.fatsecret.com/connect/token", {
+    const r = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: `Basic ${basic}`,
-      },
-      body: "grant_type=client_credentials&scope=basic",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
       signal: ctrl.signal,
     });
-    if (!r.ok) {
-      // fallback: credenciais no body em vez de Basic auth
-      r = await fetch("https://oauth.fatsecret.com/connect/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `grant_type=client_credentials&scope=basic&client_id=${encodeURIComponent(FS_CLIENT_ID)}&client_secret=${encodeURIComponent(FS_CLIENT_SECRET)}`,
-        signal: ctrl.signal,
-      });
-    }
     clearTimeout(t);
     if (!r.ok) {
-      const errBody = await r.text().catch(() => "");
-      fsDebug.push(
-        `token HTTP ${r.status}: ${errBody.slice(0, 120)}`,
-      );
-      fsDebug.push(
-        `(client_id "${FS_CLIENT_ID.slice(0, 4)}…" ${FS_CLIENT_ID.length} chars; ` +
-        `secret ${FS_CLIENT_SECRET.length} chars)`,
-      );
+      fsDebug.push(`HTTP ${r.status}`);
       return null;
     }
     const doc = await r.json();
-    const token = String(doc?.access_token ?? "");
-    if (!token) {
-      fsDebug.push("resposta sem access_token");
+    if (doc?.error) {
+      fsDebug.push(`API error: ${JSON.stringify(doc.error).slice(0, 80)}`);
       return null;
     }
-    fsToken = { token, exp: Date.now() + (Number(doc?.expires_in) || 3600) * 1000 };
-    return token;
+    return doc;
   } catch (e) {
     clearTimeout(t);
-    fsDebug.push(`token erro: ${String(e).slice(0, 60)}`);
+    fsDebug.push(`erro: ${String(e).slice(0, 60)}`);
     return null;
   }
 }
@@ -80,68 +96,52 @@ interface FsResult {
 }
 
 async function fsSearch(term: string, brand: string | null): Promise<FsResult | null> {
-  const token = await fsGetToken();
-  if (!token) return null;
-  // region=PT para produtos portugueses; sem language (descrições em EN,
-  // mas os regexes abaixo aceitam EN e PT)
-  const url =
-    `https://platform.fatsecret.com/rest/server.api?method=foods.search` +
-    `&search_expression=${encodeURIComponent(term)}&max_results=20&format=json&region=PT`;
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), OFF_TIMEOUT_MS);
-  try {
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: ctrl.signal });
-    clearTimeout(t);
-    if (!r.ok) {
-      fsDebug.push(`search HTTP ${r.status}`);
-      return null;
+  if (!FS_CLIENT_ID || !FS_CLIENT_SECRET) return null;
+  const doc = await fsCall({
+    method: "foods.search",
+    search_expression: term,
+    max_results: 20,
+    region: "PT",
+  });
+  if (!doc) return null;
+  const foods = (doc?.foods?.food ?? []) as Record<string, string>[];
+  const norm = (x: unknown) =>
+    String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const grab = (d: string, re: RegExp[]) => {
+    for (const r of re) {
+      const m = (d.match(r) ?? [])[1];
+      if (m) return parseFloat(m);
     }
-    const doc = await r.json();
-    const foods = (doc?.foods?.food ?? []) as Record<string, string>[];
-    const norm = (x: unknown) =>
-      String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const num = (s: string | undefined) => (s ? parseFloat(s) : 0);
-    const grab = (re: RegExp[]) => {
-      for (const r of re) {
-        const m = (d0.match(r) ?? [])[1];
-        if (m) return parseFloat(m);
-      }
-      return 0;
-    };
-    let d0 = "";
-    const brandNorm = norm(brand);
-    const cands: FsResult[] = [];
-    for (const f of foods) {
-      // descrições por 100g, EN ("Per 100g - Calories: …") ou PT ("Por 100g - Calorias: …")
-      d0 = f.food_description ?? "";
-      if (!/Per 100g|Por 100g/i.test(d0)) continue;
-      const kcal = grab([
-        /Calories: ([\d.]+)\s*kcal/i,
-        /Calorias: ([\d.]+)\s*kcal/i,
-        /Calorias: ([\d.]+)\s*Cal/i,
-      ]);
-      if (kcal <= 0) continue;
-      cands.push({
-        kcal: Math.round(kcal),
-        protein: grab([/Protein: ([\d.]+)g/i, /Prote[ií]nas?: ([\d.]+)g/i]),
-        carbs: grab([/Carbs: ([\d.]+)g/i, /Carboidratos: ([\d.]+)g/i, /Hidratos?: ([\d.]+)g/i]),
-        fat: grab([/Fat: ([\d.]+)g/i, /Gordura[s]? ?: ([\d.]+)g/i]),
-        brand: String(f.brand_name ?? "").trim(),
-        name: String(f.food_name ?? "").slice(0, 60),
-        brandMatch: !!brand && norm(f.brand_name).includes(brandNorm),
-      });
-    }
-    fsDebug.push(`search "${term}": ${foods.length} resultados, ${cands.length} com 100g`);
-    const best = cands.sort((a, b) =>
-      (b.brandMatch ? 1 : 0) - (a.brandMatch ? 1 : 0) ||
-      (b.brand ? 1 : 0) - (a.brand ? 1 : 0),
-    )[0] ?? null;
-    return best;
-  } catch (e) {
-    clearTimeout(t);
-    fsDebug.push(`search erro: ${String(e).slice(0, 60)}`);
-    return null;
+    return 0;
+  };
+  const brandNorm = norm(brand);
+  const cands: FsResult[] = [];
+  for (const f of foods) {
+    // descrições por 100g, EN ("Per 100g - Calories: …") ou PT ("Por 100g - Calorias: …")
+    const d = f.food_description ?? "";
+    if (!/Per 100g|Por 100g/i.test(d)) continue;
+    const kcal = grab(d, [
+      /Calories: ([\d.]+)\s*kcal/i,
+      /Calorias: ([\d.]+)\s*kcal/i,
+      /Calorias: ([\d.]+)\s*Cal/i,
+    ]);
+    if (kcal <= 0) continue;
+    cands.push({
+      kcal: Math.round(kcal),
+      protein: grab(d, [/Protein: ([\d.]+)g/i, /Prote[ií]nas?: ([\d.]+)g/i]),
+      carbs: grab(d, [/Carbs: ([\d.]+)g/i, /Carboidratos: ([\d.]+)g/i, /Hidratos?: ([\d.]+)g/i]),
+      fat: grab(d, [/Fat: ([\d.]+)g/i, /Gordura[s]? ?: ([\d.]+)g/i]),
+      brand: String(f.brand_name ?? "").trim(),
+      name: String(f.food_name ?? "").slice(0, 60),
+      brandMatch: !!brand && norm(f.brand_name).includes(brandNorm),
+    });
   }
+  fsDebug.push(`search "${term}": ${foods.length} resultados, ${cands.length} com 100g`);
+  const best = cands.sort((a, b) =>
+    (b.brandMatch ? 1 : 0) - (a.brandMatch ? 1 : 0) ||
+    (b.brand ? 1 : 0) - (a.brand ? 1 : 0),
+  )[0] ?? null;
+  return best;
 }
 
 const SYSTEM = `És um parser nutricional rigoroso para português europeu. Extrais os alimentos de uma refeição descrita em linguagem natural.
