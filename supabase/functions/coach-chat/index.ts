@@ -320,7 +320,7 @@ async function mistralChat(key: string, messages: unknown[], stream: boolean): P
       max_tokens: 800,
       stream,
       messages,
-      ...(stream ? {} : { tools: TOOLS, tool_choice: "auto" })),
+      ...(stream ? {} : { tools: TOOLS, tool_choice: "auto" }),
     }),
   });
 }
@@ -418,7 +418,8 @@ Deno.serve(async (req) => {
           for (const line of lines) {
             if (!line.startsWith("data:")) continue;
             const payload = line.slice(5).trim();
-            if (payload === " {
+            if (payload === "") continue;
+            try {
               const doc = JSON.parse(payload);
               const tk = doc?.choices?.[0]?.delta?.content ?? "";
               if (tk) send({ type: "token", v: tk });
