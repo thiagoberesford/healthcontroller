@@ -25,9 +25,6 @@ const todayIso = () => {
 export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal }) {
   const [input, setInput] = useState("");
   const [preview, setPreview] = useState(null);
-  const [burnedToday, setBurnedToday] = useState(null);
-
-  const [foods, setFoods] = useState([]);
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const [pending, setPending] = useState([]);
@@ -36,15 +33,18 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
   const [customMsg, setCustomMsg] = useState(null);
   const [chartMode, setChartMode] = useState("macros");
   const [openDays, setOpenDays] = useState(() => new Set([todayIso()]));
+  const [foods, setFoods] = useState([]);
   const [hydration, setHydration] = useState([]);
   const [daily14, setDaily14] = useState([]);
   const [weight, setWeight] = useState(null);
+  const [actsSince, setActsSince] = useState([]);
 
   const loadFoods = () => api.listFoods().then(setFoods);
 
   useEffect(() => {
     api.listHydration(addDays(dateKey(new Date()), -13)).then(setHydration);
     api.listGarminDaily(SUUNTO_START, dateKey(new Date())).then(setDaily14);
+    api.listGarminActivities(SUUNTO_START, dateKey(new Date())).then(setActsSince);
     api.listBody().then((rows) => {
       const withWeight = (rows || []).filter((r) => r.weight).slice(-1);
       if (withWeight.length) setWeight(withWeight[0].weight);
@@ -53,11 +53,6 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
 
   useEffect(() => {
     loadFoods();
-    (async () => {
-      const today = dateKey(new Date());
-      const d = await api.listGarminDaily(today, today);
-      setBurnedToday(d.length ? d[0].total_kcal : 0);
-    })();
   }, [refreshKey]);
 
   const normQ = (s) =>
@@ -214,6 +209,23 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
 
   /* balanço apenas desde o início do regime Suunto (05/10/2026) */
   const SUUNTO_START = "2026-10-05";
+
+  /* saldos (hoje e gráfico) usam TODOS active_kcal — as ativas do Suunto
+     já incluem a energia dos treinos; somar activities.kcal seria double counting */
+  const burnedToday = useMemo(() => {
+    const today = dateKey(new Date());
+    return daily14.find((d) => d.date === today)?.active_kcal ?? null;
+  }, [daily14]);
+
+  const workoutKcalByDay = useMemo(() => {
+    const m = new Map();
+    for (const a of actsSince || []) {
+      const d = String(a.start || "").slice(0, 10);
+      m.set(d, (m.get(d) || 0) + (a.kcal || 0));
+    }
+    return m;
+  }, [actsSince]);
+
   const balanceByDay = useMemo(() => {
     const dailyMap = new Map(daily14.map((d) => [d.date, d.active_kcal || 0]));
     const today = dateKey(new Date());
@@ -232,9 +244,10 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
         in: inKcal,
         out: outKcal,
         net: inKcal - outKcal,
+        workout: Math.round(workoutKcalByDay.get(dayIso) || 0),
       };
     });
-  }, [meals, daily14]);
+  }, [meals, daily14, workoutKcalByDay]);
 
   const mealsByDay = useMemo(() => {
     const groups = [];
@@ -604,23 +617,30 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
               <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
               <XAxis dataKey="label" {...axisProps} />
               <YAxis {...axisProps} unit=" kcal" />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <ReferenceLine
-                y={0}
-                stroke={C.muted}
-                strokeDasharray="2 2"
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const d = payload[0]?.payload || {};
+                  return (
+                    <div className="rounded-lg p-2 text-xs" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                      <div className="mb-1 font-semibold" style={{ color: C.text }}>{d.label}</div>
+                      <div style={{ color: C.teal }}>Ingeridas: {d.in.toLocaleString("pt-BR")} kcal</div>
+                      <div style={{ color: C.orange }}>Ativas: {d.out.toLocaleString("pt-BR")} kcal</div>
+                      {d.workout > 0 && (
+                        <div style={{ color: C.muted }}>
+                          treino: {d.workout.toLocaleString("pt-BR")} kcal (já incl. nas ativas)
+                        </div>
+                      )}
+                      <div style={{ color: C.purple }}>Líquido: {d.net.toLocaleString("pt-BR")} kcal</div>
+                    </div>
+                  );
+                }}
               />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <ReferenceLine y={0} stroke={C.muted} strokeDasharray="2 2" />
               <Bar dataKey="in" fill={C.teal} name="Ingeridas (kcal)" radius={[3, 3, 0, 0]} />
               <Bar dataKey="out" fill={C.orange} name="Ativas queimadas (kcal)" radius={[3, 3, 0, 0]} />
-              <Line
-                type="monotone"
-                dataKey="net"
-                stroke={C.purple}
-                strokeWidth={2}
-                dot={{ r: 2 }}
-                name="Líquido (in − out)"
-              />
+              <Line type="monotone" dataKey="net" stroke={C.purple} strokeWidth={2} dot={{ r: 2 }} name="Líquido (in − out)" />
             </ComposedChart>
           </ResponsiveContainer>
         )}

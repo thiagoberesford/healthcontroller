@@ -30,6 +30,27 @@ SUUNTO_PASSWORD = os.getenv("SUUNTO_PASSWORD", "")
 DB_URL = os.getenv("SUPABASE_DB_URL", "")
 CUTOFF = date(2026, 10, 4)  # freeze real do Garmin (dados até 04/10); Suunto entra a partir de 05/10
 
+# BMR (Mifflin-St Jeor) para total_kcal = BMR + active_kcal
+BMR_SEX = "male"       # "male" | "female"
+BMR_AGE = 36
+BMR_HEIGHT_CM = 180
+BMR_WEIGHT_FALLBACK = 97.0  # se não houver pesagem no body_metrics
+
+
+def bmr(weight_kg: float) -> int:
+    base = 10 * weight_kg + 6.25 * BMR_HEIGHT_CM - 5 * BMR_AGE
+    return round(base + (5 if BMR_SEX == "male" else -161))
+
+
+def latest_weight(conn) -> float:
+    with conn.cursor() as cur:
+        cur.execute(
+            "select weight from public.body_metrics where weight is not null "
+            "order by date desc limit 1"
+        )
+        r = cur.fetchone()
+    return float(r[0]) if r and r[0] else BMR_WEIGHT_FALLBACK
+
 # launchd corre com PATH mínimo: resolver o binário absoluto
 SUUNTOOL_BIN = shutil.which("suuntool") or "/opt/homebrew/bin/suuntool"
 
@@ -279,6 +300,11 @@ def main() -> None:
         if args.dry_run:
             print("DRY-RUN: nada escrito")
             return
+        # total_kcal = BMR + ativas (as ativas do Suunto já incluem os treinos)
+        basal = bmr(latest_weight(conn))
+        for r in daily:
+            if r.get("active_kcal"):
+                r["total_kcal"] = round(r["active_kcal"] + basal)
         upsert(conn, workouts, daily)
         if workouts:
             # detalhes (SML -> activity_details) para os treinos novos
