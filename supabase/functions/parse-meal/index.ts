@@ -12,6 +12,91 @@ const OFF_UA = "HealthController/1.0 (uso pessoal; github.com/thiagoberesford/he
 const OFF_TIMEOUT_MS = 3000;
 const MAX_OFF_CALLS = 3;
 
+/* ---------- FatSecret (opcional; FATSECRET_CLIENT_ID/SECRET em secrets) ---------- */
+const FS_CLIENT_ID = Deno.env.get("FATSECRET_CLIENT_ID") ?? "";
+const FS_CLIENT_SECRET = Deno.env.get("FATSECRET_CLIENT_SECRET") ?? "";
+let fsToken: { token: string; exp: number } | null = null;
+
+async function fsGetToken(): Promise<string | null> {
+  if (!FS_CLIENT_ID || !FS_CLIENT_SECRET) return null;
+  if (fsToken && fsToken.exp > Date.now() + 60_000) return fsToken.token;
+  const basic = btoa(`${FS_CLIENT_ID}:${FS_CLIENT_SECRET}`);
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), OFF_TIMEOUT_MS);
+  try {
+    const r = await fetch("https://oauth.fatsecret.com/connect/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${basic}`,
+      },
+      body: "grant_type=client_credentials&scope=basic",
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    if (!r.ok) return null;
+    const doc = await r.json();
+    const token = String(doc?.access_token ?? "");
+    if (!token) return null;
+    fsToken = { token, exp: Date.now() + (Number(doc?.expires_in) || 3600) * 1000 };
+    return token;
+  } catch {
+    clearTimeout(t);
+    return null;
+  }
+}
+
+interface FsResult {
+  kcal: number; protein: number; carbs: number; fat: number;
+  brand: string; name: string; brandMatch: boolean;
+}
+
+async function fsSearch(term: string, brand: string | null): Promise<FsResult | null> {
+  const token = await fsGetToken();
+  if (!token) return null;
+  const url =
+    `https://platform.fatsecret.com/rest/server.api?method=foods.search` +
+    `&search_expression=${encodeURIComponent(term)}&max_results=20&format=json&region=PT&language=pt`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), OFF_TIMEOUT_MS);
+  try {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) return null;
+    const doc = await r.json();
+    const foods = (doc?.foods?.food ?? []) as Record<string, string>[];
+    const norm = (x: unknown) =>
+      String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const num = (s: string) => parseFloat(s) || 0;
+    const brandNorm = norm(brand);
+    const cands: FsResult[] = [];
+    for (const f of foods) {
+      // só descrições por 100g ("Per 100g - Calories: 43.00kcal | Fat: ... | Carbs: ... | Protein: ...")
+      const d = f.food_description ?? "";
+      if (!/Per 100g/i.test(d)) continue;
+      const kcal = num((d.match(/Calories: ([\d.]+)kcal/) ?? [])[1] ?? "");
+      if (kcal <= 0) continue;
+      cands.push({
+        kcal: Math.round(kcal),
+        protein: num((d.match(/Protein: ([\d.]+)g/) ?? [])[1] ?? "0"),
+        carbs: num((d.match(/Carbs: ([\d.]+)g/) ?? [])[1] ?? "0"),
+        fat: num((d.match(/Fat: ([\d.]+)g/) ?? [])[1] ?? "0"),
+        brand: String(f.brand_name ?? "").trim(),
+        name: String(f.food_name ?? "").slice(0, 60),
+        brandMatch: !!brand && norm(f.brand_name).includes(brandNorm),
+      });
+    }
+    const best = cands.sort((a, b) =>
+      (b.brandMatch ? 1 : 0) - (a.brandMatch ? 1 : 0) ||
+      (b.brand ? 1 : 0) - (a.brand ? 1 : 0),
+    )[0] ?? null;
+    return best;
+  } catch {
+    clearTimeout(t);
+    return null;
+  }
+}
+
 const SYSTEM = `És um parser nutricional rigoroso para português europeu. Extrais os alimentos de uma refeição descrita em linguagem natural.
 
 REGRAS DE UNIDADES (a parte mais importante — NUNCA as convertes):
@@ -300,27 +385,39 @@ Deno.serve(async (req) => {
       foodId = String(local.id);
       foodName = local.brand ? `${local.name} (${local.brand})` : String(local.name);
     } else if (brand && offCalls < MAX_OFF_CALLS) {
-      // só itens com marca vão à OFF
+      // só itens com marca vão à procura remota; FatSecret (PT) primeiro, OFF depois
       offCalls++;
-      const off = await offSearch(term, brand);
-      if (off && off.kcal > 0) {
-        origin = "openfoodfacts";
-        macros = { kcal_100: off.kcal, protein_100: off.protein, carbs_100: off.carbs, fat_100: off.fat };
-        foodName = off.name || label;
-        foodId = `off-${slug(`${off.name} ${off.brand}`)}`;
-        needsReview = !off.brandMatch; // produto genérico no lugar da marca pedida
+      let remote: FsResult | null = null;
+      let remoteSource: "fatsecret" | "openfoodfacts" = "fatsecret";
+      remote = await fsSearch(term, brand);
+      if (!remote) {
+        const off = await offSearch(term, brand);
+        if (off) {
+          remote = {
+            kcal: off.kcal, protein: off.protein, carbs: off.carbs, fat: off.fat,
+            brand: off.brand, name: off.name, brandMatch: off.brandMatch,
+          };
+          remoteSource = "openfoodfacts";
+        }
+      }
+      if (remote && remote.kcal > 0) {
+        origin = remoteSource;
+        macros = { kcal_100: remote.kcal, protein_100: remote.protein, carbs_100: remote.carbs, fat_100: remote.fat };
+        foodName = remote.name || label;
+        foodId = `off-${slug(`${remote.name} ${remote.brand}`)}`;
+        needsReview = !remote.brandMatch; // produto genérico no lugar da marca pedida
         // enriquecer a base: próxima vez sai local (JWT do user; nunca service key)
         await upsertFood(auth, {
           id: foodId,
-          name: (off.name || label).slice(0, 60),
-          brand: off.brandMatch ? (off.brand || brand) : (off.brand || brand),
+          name: (remote.name || label).slice(0, 60),
+          brand: remote.brand || brand,
           category: storeHint ? `continente:${storeHint}` : "",
-          kcal: off.kcal,
-          protein: off.protein,
-          carbs: off.carbs,
-          fat: off.fat,
+          kcal: remote.kcal,
+          protein: remote.protein,
+          carbs: remote.carbs,
+          fat: remote.fat,
           portion: 100,
-          source: "openfoodfacts",
+          source: remoteSource,
         });
       } else {
         needsReview = true; // marca indicada mas produto não encontrado

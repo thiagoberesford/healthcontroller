@@ -435,8 +435,17 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
                     return (
                       <div key={i} className="flex flex-wrap items-center justify-between gap-2 text-sm">
                         <span style={{ color: C.text }}>
-                          {it.origin === "openfoodfacts" && (
-                            <span title="valores reais do Open Food Facts" style={{ color: C.green }}>OFF </span>
+                          {(it.origin === "openfoodfacts" || it.origin === "fatsecret") && (
+                            <span
+                              title={
+                                it.origin === "fatsecret"
+                                  ? "valores reais do FatSecret"
+                                  : "valores reais do Open Food Facts"
+                              }
+                              style={{ color: C.green }}
+                            >
+                              {it.origin === "fatsecret" ? "FS" : "OFF"}{" "}
+                            </span>
                           )}
                           {it.estimated && (
                             <span title="estimado pelo LLM — sem produto na base" style={{ color: C.orange }}>≈ </span>
