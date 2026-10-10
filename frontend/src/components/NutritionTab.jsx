@@ -396,18 +396,79 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
           <div className="mt-4 rounded-lg p-3" style={{ background: C.card2, border: `1px solid ${C.border}` }}>
             {preview.items.length ? (
               <>
-                <div className="space-y-1">
-                  {preview.items.map((it, i) => (
-                    <div key={i} className="flex justify-between text-sm">
-                      <span style={{ color: C.text }}>
-                        {it.estimated && (
-                          <span title="estimado pelo LLM — sem produto exato na base" style={{ color: C.orange }}>≈ </span>
-                        )}
-                        {it.label} <span style={{ color: C.muted }}>({it.grams}g)</span>
-                      </span>
-                      <span style={{ color: C.muted }}>{it.kcal} kcal · P{it.protein} C{it.carbs} G{it.fat}</span>
-                    </div>
-                  ))}
+                <div className="space-y-2">
+                  {preview.items.map((it, i) => {
+                    const updItem = (patch) => {
+                      const items = preview.items.map((x, j) => (j === i ? { ...x, ...patch } : x));
+                      const totals = items.reduce(
+                        (acc, x) => ({
+                          kcal: acc.kcal + (x.kcal || 0),
+                          protein: +(acc.protein + (x.protein || 0)).toFixed(1),
+                          carbs: +(acc.carbs + (x.carbs || 0)).toFixed(1),
+                          fat: +(acc.fat + (x.fat || 0)).toFixed(1),
+                        }),
+                        { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+                      );
+                      setPreview({ ...preview, items, totals: { label: "Total", ...totals } });
+                    };
+                    const setQty = (unit, rawQty) => {
+                      const qty = Math.max(0, Math.round(parseFloat(rawQty) || 0));
+                      let grams;
+                      if (unit === "unidade") {
+                        // escalar os gramas proporcionalmente ao nº de unidades
+                        const oldQty = it.quantity || 1;
+                        grams = it.unit === "unidade" && it.grams ? Math.round((it.grams * qty) / oldQty) : it.grams || qty;
+                      } else {
+                        grams = qty;
+                      }
+                      const s = (v) => (grams > 0 ? (v * grams) / 100 : 0);
+                      updItem({
+                        unit,
+                        quantity: qty,
+                        grams,
+                        kcal: Math.round(s(it.kcal_100 || 0)),
+                        protein: +s(it.protein_100 || 0).toFixed(1),
+                        carbs: +s(it.carbs_100 || 0).toFixed(1),
+                        fat: +s(it.fat_100 || 0).toFixed(1),
+                      });
+                    };
+                    return (
+                      <div key={i} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                        <span style={{ color: C.text }}>
+                          {it.origin === "openfoodfacts" && (
+                            <span title="valores reais do Open Food Facts" style={{ color: C.green }}>OFF </span>
+                          )}
+                          {it.estimated && (
+                            <span title="estimado pelo LLM — sem produto na base" style={{ color: C.orange }}>≈ </span>
+                          )}
+                          {it.needs_review && <span title="unidade ou quantidade incerta — confirma" style={{ color: C.orange }}>⚠ </span>}
+                          {it.label}
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            className="w-16 rounded-lg px-2 py-1 text-xs outline-none"
+                            value={it.unit === "unidade" ? it.quantity : it.grams}
+                            onChange={(e) => setQty(it.unit || "g", e.target.value)}
+                            style={inputStyle}
+                          />
+                          <select
+                            className="rounded-lg px-1.5 py-1 text-xs outline-none"
+                            value={it.unit || "g"}
+                            onChange={(e) => setQty(e.target.value, it.unit === "unidade" ? it.quantity : it.grams)}
+                            style={inputStyle}
+                          >
+                            <option value="g">g</option>
+                            <option value="ml">ml</option>
+                            <option value="unidade">un.</option>
+                          </select>
+                          <span className="text-xs" style={{ color: C.muted }}>
+                            {it.kcal} kcal · P{it.protein} C{it.carbs} G{it.fat}
+                          </span>
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t pt-3" style={{ borderColor: C.border }}>
                   <span className="text-sm font-semibold" style={{ color: C.text }}>Total</span>

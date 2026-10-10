@@ -109,6 +109,14 @@ export const api = {
         label: p.label,
         grams: p.grams,
         ...macrosOf(p),
+        ...(p.unit ? { unit: p.unit } : {}),
+        ...(p.quantity ? { quantity: p.quantity } : {}),
+        ...(p.origin ? { origin: p.origin } : {}),
+        ...(p.needs_review ? { needs_review: true } : {}),
+        ...(p.kcal_100 != null ? { kcal_100: p.kcal_100 } : {}),
+        ...(p.protein_100 != null ? { protein_100: p.protein_100 } : {}),
+        ...(p.carbs_100 != null ? { carbs_100: p.carbs_100 } : {}),
+        ...(p.fat_100 != null ? { fat_100: p.fat_100 } : {}),
         ...(p.estimated ? { estimated: true } : {}),
       }));
       const t = lite.length
@@ -130,35 +138,25 @@ export const api = {
           };
         }
         if (data?.items?.length) {
-          // ancoragem SÓ quando o utilizador escreveu a marca e o produto existe
-          const normS = (x) =>
-            (x || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-          const brandSet = [...new Set(foods.map((f) => normS(f.brand)).filter(Boolean))];
-          const items = data.items.map((it) => {
-            const brand = brandSet.find((b) => b && normS(it.label).includes(b));
-            if (brand) {
-              const db = matchFoodLabel(it.label, foods);
-              if (db && normS(db.brand) === brand) {
-                return {
-                  food: db,
-                  grams: it.grams || db.portion || 100,
-                  label: db.brand ? `${db.name} (${db.brand})` : db.name,
-                };
-              }
-            }
-            // sem marca / sem produto: estimativa pura do LLM
-            const g = it.grams || 100;
-            return {
-              label: it.label,
-              grams: g,
-              kcal: Math.round((it.kcal_100g * g) / 100),
-              protein: +((it.protein_100g * g) / 100).toFixed(1),
-              carbs: +((it.carbs_100g * g) / 100).toFixed(1),
-              fat: +((it.fat_100g * g) / 100).toFixed(1),
-              estimated: true,
-            };
-          });
-          return wrap(items, []);
+          // o parser na Edge Function já resolveu unidades, base local e OFF
+          const items = data.items.map((it) => ({
+            label: it.label,
+            grams: it.grams,
+            unit: it.unit || "g",
+            quantity: it.quantity || it.grams,
+            kcal: it.kcal,
+            protein: it.protein,
+            carbs: it.carbs,
+            fat: it.fat,
+            kcal_100: it.kcal_100,
+            protein_100: it.protein_100,
+            carbs_100: it.carbs_100,
+            fat_100: it.fat_100,
+            origin: it.origin || "estimate",
+            needs_review: !!it.needs_review,
+            estimated: (it.origin || "estimate") === "estimate",
+          }));
+          return wrap(items, data.unknown || []);
         }
       } catch (e) {}
     }

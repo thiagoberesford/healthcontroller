@@ -1,32 +1,47 @@
-// Edge Function: parser de refeições com LLM (Mistral).
-// O site chama via supabase.functions.invoke (JWT do utilizador).
+// Edge Function: parser de refeições com LLM (Mistral) + lookup local + Open Food Facts.
+// O site chama via supabase.functions.invoke (JWT do utilizador — as consultas
+// ao Supabase respeitam o RLS; NUNCA service key).
 // Requer o secret MISTRAL_API_KEY (dashboard: Edge Functions -> Secrets).
-// Deploy (dashboard): Edge Functions -> New function -> "parse-meal" -> colar este ficheiro.
+// Deploy (dashboard): Edge Functions -> "parse-meal" -> colar este ficheiro.
 
 const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
 const MODEL = "mistral-small-latest";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const OFF_UA = "HealthController/1.0 (uso pessoal; github.com/thiagoberesford/healthcontroller)";
+const OFF_TIMEOUT_MS = 3000;
+const MAX_OFF_CALLS = 3;
 
 const SYSTEM = `És um parser nutricional rigoroso para português europeu. Extrais os alimentos de uma refeição descrita em linguagem natural.
 
-REGRAS DE QUANTIDADE (a parte mais importante):
-- Quando a quantidade vem em UNIDADES (fatias, ovos, colheres), MULTIPLICA o peso unitário:
-  fatia de queijo ~15g | fatia de pão ~30g | ovo ~55g | colher de sopa ~15g | colher de chá ~5g | banana ~120g | maçã ~180g
-  Exemplo: "3 fatias de queijo" = 3 x 15g = 45g. "duas fatias de pão" = 2 x 30g = 60g.
-- Quando a descrição já traz gramas/mililitros, usa-os EXATAMENTE ("250ml" -> 250g).
-- Porções líquidas/típicas: café 30-40ml, galão 250ml (leite ~200ml + café ~50ml), iogurte 125g, copo de leite 200-250ml, sopa 300ml, bife/peito de frango 150g.
-- Parentesis especificam componentes: "tosta de queijo (3 fatias de queijo e duas de pão)" sao DOIS itens: queijo 45g e pão 60g.
+REGRAS DE UNIDADES (a parte mais importante — NUNCA as convertes):
+- NUNCA convertes unidades: o que vem em ml fica ml, o que vem em gramas fica g, o que vem em unidades (fatias, ovos, bananas) fica "unidade".
+- NÃO convertes volume em peso: "um galão de 250ml" fica quantity=250, unit="ml". "100 gramas de arroz" fica quantity=100, unit="g".
+- Quantidade sem unidade: deduz pelo tipo do alimento — líquidos (leite, café, sopa, sumo, galão, chá) em ml; sólidos em g; contáveis (ovos, bananas, fatias) em "unidade".
+- Para unit="unidade", também calculas os gramas totais (quantity × peso unitário): fatia de queijo 15g | fatia de pão 30g | ovo 55g | colher de sopa 15g | banana 120g | maçã 180g.
+  Exemplo: "3 fatias de queijo" → quantity=3, unit="unidade", grams=45. "2 ovos" → quantity=2, unit="unidade", grams=110.
+- "tosta de queijo (3 fatias de queijo e duas de pão)" são DOIS itens: queijo (3 unidade, 45g) e pão (2 unidade, 60g).
 
-OUTRAS REGRAS:
-- Cada alimento/bebida é um item separado (inclui guarnições).
-- Se houver marca ("iogurte Continente"), inclui-a no label: "produto (marca)".
-- kcal_100g, protein_100g, carbs_100g, fat_100g: valores por 100g segundo tabelas nutricionais.
-- ANTES de responder, verifica cada item: as gramas correspondem mesmo à descrição?
+REGRAS DE MARCA E PESQUISA:
+- Se houver marca ("iogurte da Mimosa", "falafel da Sementes do Mundo do Continente"), extrais: brand="Mimosa"/"Sementes do Mundo", store_hint="Continente" quando mencionada a loja.
+- product_search = o melhor termo de pesquisa em português para encontrar o produto numa base de alimentos (ex.: para "comi uns falaféis da Sementes do Mundo do Continente" → "falafel"). Sem marca, product_search pode ficar igual ao label.
+
+VALORES NUTRICIONAIS (por 100 g/ml):
+- kcal_100g, protein_100g, carbs_100g, fat_100g: valores por 100g segundo tabelas nutricionais (para líquidos, por 100ml — numericamente quase igual).
+- ANTES de responder, verifica cada item: a unidade corresponde ao que foi escrito? as gramas correspondem à descrição?
+
+EXEMPLOS:
+- "comi um galão de 250ml e um tostas" → [{"label":"galão","quantity":250,"unit":"ml","grams":250,...}, ...]
+- "uma bifa de 200 gramas e uma taça de sopa" → bife quantity=200 unit="g"; sopa quantity=300 unit="ml"
+- "comi o iogurte natural da Mimosa" → [{"label":"iogurte natural","brand":"Mimosa","product_search":"iogurte natural mimosa","quantity":125,"unit":"g","grams":125,...}]
 
 Responde APENAS com JSON válido, sem markdown:
-{"items": [{"label": "…", "grams": 45, "kcal_100g": 350, "protein_100g": 25, "carbs_100g": 1, "fat_100g": 27}]}
+{"items": [{"label": "…", "brand": null, "store_hint": null, "product_search": "…", "quantity": 250, "unit": "ml", "grams": 250, "kcal_100g": 43, "protein_100g": 2.4, "carbs_100g": 5, "fat_100g": 1.5}]}
 Lista vazia se não houver alimentos.`;
 
-// só estas origens podem chamar a função (produção + dev local)
+// heurística de líquidos para validação de unidades
+const LIQUID_RE =
+  /(leite|café|galão|chá|sopa|caldo|sumo|suco|água|refresco|cerveja|vinho|bebida|iogurte líquido|néctar|leite)/i;
+
 const ALLOWED_ORIGINS = [
   "https://thiagoberesford.github.io",
   "http://localhost:5173",
@@ -48,6 +63,124 @@ function json(body: unknown, req: Request, status = 200) {
     headers: { "Content-Type": "application/json", ...corsHeaders(req) },
   });
 }
+
+/* ---------- lookup na base foods (PostgREST com o JWT do user; RLS aplica) ---------- */
+
+async function localFoodSearch(
+  auth: string,
+  term: string,
+  brand: string | null,
+): Promise<Record<string, unknown> | null> {
+  if (!SUPABASE_URL || !term) return null;
+  const q = new URLSearchParams({
+    select: "id,name,brand,category,kcal,protein,carbs,fat,portion,source",
+    name: `ilike.*${term}*`,
+    limit: "10",
+  });
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/foods?${q}`, {
+      headers: { Authorization: auth, apikey: auth },
+    });
+    if (!r.ok) return null;
+    const rows: Record<string, unknown>[] = await r.json();
+    if (!rows?.length) return null;
+    const norm = (x: unknown) =>
+      String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (brand) {
+      const exact = rows.find((f) => norm(f.brand) === norm(brand)) ||
+        rows.find((f) => norm(String(f.brand ?? "")).includes(norm(brand)));
+      if (exact) return exact;
+    }
+    return rows.find((f) => !f.brand) ?? rows[0];
+  } catch {
+    return null;
+  }
+}
+
+async function upsertFood(auth: string, f: Record<string, unknown>): Promise<void> {
+  if (!SUPABASE_URL) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/foods?on_conflict=id`, {
+      method: "POST",
+      headers: {
+        Authorization: auth,
+        apikey: auth,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates",
+      },
+      body: JSON.stringify(f),
+    });
+  } catch {
+    /* nunca quebrar o parse por causa do upsert */
+  }
+}
+
+/* ---------- Open Food Facts ---------- */
+
+const offCache = new Map<string, Record<string, unknown> | null>();
+
+interface OffProduct {
+  product_name?: string;
+  brands?: string;
+  countries?: string;
+  serving_size?: string;
+  nutriments?: Record<string, number>;
+}
+
+async function offSearch(
+  term: string,
+): Promise<{ kcal: number; protein: number; carbs: number; fat: number; brand: string; name: string } | null> {
+  const key = term.toLowerCase().trim();
+  if (offCache.has(key)) return offCache.get(key) ?? null;
+  // pt.openfoodfacts.org: produtos PT primeiro (world devolve 503 com frequência)
+  const url =
+    `https://pt.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(term)}` +
+    `&json=1&page_size=20&fields=product_name,brands,countries,serving_size,nutriments`;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), OFF_TIMEOUT_MS);
+    const r = await fetch(url, { headers: { "User-Agent": OFF_UA }, signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) throw new Error(`off ${r.status}`);
+    const body = await r.json();
+    const products = (body?.products ?? []) as OffProduct[];
+    const norm = (x: unknown) =>
+      String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const num = (v: unknown) => (v == null ? 0 : Number(v) || 0);
+    const usable = products.filter((p) => num(p.nutriments?.["energy-kcal_100g"]) > 0);
+    const firstTerm = norm(term).split(" ")[0] ?? "";
+    const best = usable
+      .map((p) => {
+        const n = p.nutriments!;
+        const pt = norm(p.countries).includes("portugal");
+        const nameHit = norm(p.product_name).includes(firstTerm);
+        const complete =
+          num(n["proteins_100g"]) > 0 && num(n["carbohydrates_100g"]) >= 0 && num(n["fat_100g"]) > 0;
+        return {
+          kcal: Math.round(num(n["energy-kcal_100g"])),
+          protein: +num(n["proteins_100g"]).toFixed(1),
+          carbs: +num(n["carbohydrates_100g"]).toFixed(1),
+          fat: +num(n["fat_100g"]).toFixed(1),
+          brand: String(p.brands ?? "").split(",")[0]?.trim() ?? "",
+          name: String(p.product_name ?? "").slice(0, 60),
+          score: (nameHit ? 2 : 0) + (pt ? 2 : 0) + (complete ? 1 : 0),
+        };
+      })
+      .sort((a, b) => b.score - a.score)[0] ?? null;
+    offCache.set(key, best);
+    return best;
+  } catch {
+    offCache.set(key, null);
+    return null; // erros da OFF nunca quebram o parse
+  }
+}
+
+function slug(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 60);
+}
+
+/* ---------- main ---------- */
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -75,14 +208,12 @@ Deno.serve(async (req) => {
   try {
     mistral = await fetch(MISTRAL_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({
         model: MODEL,
         temperature: 0.2,
-        max_tokens: 700,
+        max_tokens: 900,
+        response_format: { type: "json_object" },
         messages: [
           { role: "system", content: SYSTEM },
           { role: "user", content: text },
@@ -101,23 +232,113 @@ Deno.serve(async (req) => {
   let content: string = data?.choices?.[0]?.message?.content ?? "";
   content = content.trim().replace(/^```(json)?/i, "").replace(/```$/, "").trim();
 
-  let items: unknown[] = [];
+  let raw: unknown[] = [];
   try {
     const start = content.indexOf("{");
     const end = content.lastIndexOf("}");
-    items = JSON.parse(content.slice(start, end + 1)).items ?? [];
+    raw = JSON.parse(content.slice(start, end + 1)).items ?? [];
   } catch {
-    items = [];
+    raw = [];
   }
 
-  const clean = (Array.isArray(items) ? items : []).slice(0, 20).map((it: Record<string, unknown>) => ({
-    label: String(it?.label ?? "").slice(0, 80),
-    grams: Math.max(0, Math.round(Number(it?.grams) || 0)),
-    kcal_100g: Math.max(0, Number(it?.kcal_100g) || 0),
-    protein_100g: Math.max(0, Number(it?.protein_100g) || 0),
-    carbs_100g: Math.max(0, Number(it?.carbs_100g) || 0),
-    fat_100g: Math.max(0, Number(it?.fat_100g) || 0),
-  })).filter((it) => it.label && it.grams > 0);
+  let offCalls = 0;
+  const items = [];
+  for (const it of (Array.isArray(raw) ? raw : []).slice(0, 20)) {
+    const p = it as Record<string, unknown>;
+    const label = String(p?.label ?? "").slice(0, 80);
+    const brand = p?.brand ? String(p.brand).slice(0, 40) : null;
+    const storeHint = p?.store_hint ? String(p.store_hint).slice(0, 40) : null;
+    let unit = ["g", "ml", "unidade"].includes(String(p?.unit)) ? String(p.unit) : "g";
+    let quantity = Math.max(0, Math.round(Number(p?.quantity) || 0));
+    let grams = Math.max(0, Math.round(Number(p?.grams) || 0));
+    if (!label || (quantity <= 0 && grams <= 0)) continue;
+    if (unit === "unidade" && grams > 0 && quantity <= 0) quantity = 1;
+    if (unit !== "unidade" && quantity > 0) grams = quantity;
 
-  return json({ items: clean }, req);
+    // ---- lookup: base local primeiro; OFF quando há marca ----
+    const term = String(p?.product_search || label).slice(0, 60);
+    let origin = "estimate";
+    let needsReview = false;
+    let macros = {
+      kcal_100: Math.max(0, Number(p?.kcal_100g) || 0),
+      protein_100: Math.max(0, Number(p?.protein_100g) || 0),
+      carbs_100: Math.max(0, Number(p?.carbs_100g) || 0),
+      fat_100: Math.max(0, Number(p?.fat_100g) || 0),
+    };
+    let foodId: string | null = null;
+    let foodName = label;
+
+    const local = await localFoodSearch(auth, term, brand);
+    if (local) {
+      origin = "local";
+      macros = {
+        kcal_100: Number(local.kcal) || macros.kcal_100,
+        protein_100: Number(local.protein) || 0,
+        carbs_100: Number(local.carbs) || 0,
+        fat_100: Number(local.fat) || 0,
+      };
+      foodId = String(local.id);
+      foodName = local.brand ? `${local.name} (${local.brand})` : String(local.name);
+    } else if (brand && offCalls < MAX_OFF_CALLS) {
+      // só itens com marca vão à OFF
+      offCalls++;
+      const off = await offSearch(`${term} ${brand}`.trim());
+      if (off && off.kcal > 0) {
+        origin = "openfoodfacts";
+        macros = { kcal_100: off.kcal, protein_100: off.protein, carbs_100: off.carbs, fat_100: off.fat };
+        foodName = off.name || label;
+        foodId = `off-${slug(`${off.name} ${off.brand}`)}`;
+        // enriquecer a base: próxima vez sai local (JWT do user; nunca service key)
+        await upsertFood(auth, {
+          id: foodId,
+          name: (off.name || label).slice(0, 60),
+          brand: off.brand || brand,
+          category: storeHint ? `continente:${storeHint}` : "",
+          kcal: off.kcal,
+          protein: off.protein,
+          carbs: off.carbs,
+          fat: off.fat,
+          portion: 100,
+          source: "openfoodfacts",
+        });
+      } else {
+        needsReview = true; // marca indicada mas produto não encontrado
+      }
+    }
+
+    // ---- validação de unidades pós-parse ----
+    if (origin !== "estimate") {
+      const looksLiquid = LIQUID_RE.test(foodName) || LIQUID_RE.test(label);
+      if (unit === "g" && looksLiquid) unit = "ml";
+      else if (unit === "ml" && !looksLiquid) {
+        unit = "g";
+        needsReview = true;
+      }
+    } else if (unit === "ml" && !LIQUID_RE.test(label)) {
+      needsReview = true; // unidade suspeita sem match para validar
+    }
+
+    const g = unit === "unidade" ? grams : quantity;
+    const scale = (v: number) => (g > 0 ? (v * g) / 100 : 0);
+    items.push({
+      label: foodName,
+      brand,
+      unit,
+      quantity,
+      grams: g,
+      kcal: Math.round(scale(macros.kcal_100)),
+      protein: +scale(macros.protein_100).toFixed(1),
+      carbs: +scale(macros.carbs_100).toFixed(1),
+      fat: +scale(macros.fat_100).toFixed(1),
+      kcal_100: macros.kcal_100,
+      protein_100: macros.protein_100,
+      carbs_100: macros.carbs_100,
+      fat_100: macros.fat_100,
+      origin,
+      needs_review: needsReview,
+      food_id: foodId,
+    });
+  }
+
+  return json({ items }, req);
 });
