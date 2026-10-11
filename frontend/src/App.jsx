@@ -6,6 +6,7 @@ import OverviewTab from "./components/OverviewTab.jsx";
 import TrainingTab from "./components/TrainingTab.jsx";
 import BodyTab from "./components/BodyTab.jsx";
 import NutritionTab from "./components/NutritionTab.jsx";
+import ShoesTab from "./components/ShoesTab.jsx";
 import CoachChat from "./components/CoachChat.jsx";
 
 const TABS = [
@@ -13,6 +14,7 @@ const TABS = [
   { id: "training", label: "Treinos" },
   { id: "body", label: "Corpo" },
   { id: "nutrition", label: "Nutrição" },
+  { id: "shoes", label: "Ténis" },
 ];
 
 export default function App() {
@@ -150,6 +152,7 @@ export default function App() {
           removeMeal={() => setRefreshKey((k) => k + 1)}
         />
       )}
+      {tab === "shoes" && <ShoesTab refreshKey={refreshKey} />}
 
       <footer className="mt-10 pb-6 text-center text-xs" style={{ color: C.muted }}>
         Dados Garmin no Supabase (acesso com login) · refeições no navegador/backend local · Suunto na Fase 3

@@ -476,6 +476,80 @@ export const api = {
   },
 
   /* Treinos planeados (Treinus -> SuuntoPlus Guides). */
+  /* Ténis: registo de pares; "atual" é o par em uso. */
+  async listShoes() {
+    const sb = supabase();
+    if (!sb) return [];
+    try {
+      const { data, error } = await sb
+        .from("shoes")
+        .select("*")
+        .order("created_at", { ascending: true });
+      if (error) return [];
+      return data || [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  async addShoe({ name, target_km = 700, start_km = 0 }) {
+    const sb = supabase();
+    if (!sb || !name?.trim()) return null;
+    const id = `shoe|${name.trim()}`
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 60);
+    try {
+      const { data, error } = await sb
+        .from("shoes")
+        .upsert({
+          id,
+          name: name.trim(),
+          target_km,
+          start_km,
+        })
+        .select()
+        .single();
+      if (error) return null;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  /* define o par em uso (retira o "atual" aos restantes) */
+  async setCurrentShoe(id) {
+    const sb = supabase();
+    if (!sb) return false;
+    try {
+      const shoes = await this.listShoes();
+      for (const s of shoes) {
+        if (s.is_current && s.id !== id) {
+          await sb.from("shoes").update({ is_current: false }).eq("id", s.id);
+        }
+      }
+      const { error } = await sb.from("shoes").update({ is_current: true, retired: false }).eq("id", id);
+      return !error;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  async updateShoe(id, patch) {
+    const sb = supabase();
+    if (!sb) return null;
+    try {
+      const { data, error } = await sb.from("shoes").update(patch).eq("id", id).select().single();
+      if (error) return null;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  },
+
   async listPlannedWorkouts() {
     const sb = supabase();
     if (!sb) return [];
