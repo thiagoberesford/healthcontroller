@@ -37,6 +37,8 @@ export default function OverviewTab({ meals, refreshKey }) {
   const [detail, setDetail] = useState(null);
   const [tload, setTload] = useState([]);
   const [planned, setPlanned] = useState([]);
+  const [goal, setGoal] = useState(null);
+  const [goalInput, setGoalInput] = useState("");
 
   /* dados "ao vivo": carregar + refrescar a cada 60s e quando o
      separador volta a ficar visível (o sync do Mac corre à hora) */
@@ -69,6 +71,11 @@ export default function OverviewTab({ meals, refreshKey }) {
       if (alive) setTload(tl);
       const pw = await api.listPlannedWorkouts();
       if (alive) setPlanned(pw);
+      const g = await api.getMonthlyGoal();
+      if (alive) {
+        setGoal(g);
+        setGoalInput(g ?? "");
+      }
     };
     load();
     const interval = setInterval(load, 60_000);
@@ -87,6 +94,14 @@ export default function OverviewTab({ meals, refreshKey }) {
   // noite completa (registo mais recente com horas de sono)
   const sleepLast = [...series].reverse().find((d) => d.sleepHours);
   const todayLoad = tload.length ? tload[tload.length - 1] : null;
+
+  const saveGoal = async () => {
+    const km = parseFloat(String(goalInput).replace(",", ".")) || 0;
+    if (!km) return;
+    const ok = await api.setMonthlyGoal(km);
+    if (ok) setGoal(km);
+  };
+
   const readiness = todayLoad?.readiness;
   const hrvBase = todayLoad?.hrv_base_avg ? todayLoad : null;
   const hrvColor = (() => {
@@ -252,6 +267,48 @@ export default function OverviewTab({ meals, refreshKey }) {
 
       {/* Race predictor (Riegel a partir dos PRs + VO2máx) */}
       {todayLoad?.pred_5k && <RacePredictorCard todayLoad={todayLoad} />}
+
+      {/* B3: streak + meta mensal de km */}
+      {todayLoad && (
+        <Card className="p-4">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold" style={{ color: C.text }}>
+              Sequência: <span style={{ color: C.teal }}>{todayLoad.streak ?? 0} dias</span> ativos
+            </h3>
+            <span className="text-xs" style={{ color: C.muted }}>
+              <b style={{ color: C.text }}>{todayLoad.month_km ?? 0} km</b> este mês
+              {goal ? ` · meta ${goal} km` : ""}
+            </span>
+          </div>
+          <div className="h-2.5 overflow-hidden rounded-full" style={{ background: C.card2, border: `1px solid ${C.border}` }}>
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${Math.min(100, goal ? ((todayLoad.month_km || 0) / goal) * 100 : 0)}%`,
+                background: (todayLoad.month_km || 0) >= goal ? C.teal : C.blue,
+                transition: "width .4s ease",
+              }}
+            />
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="number"
+              className="w-24 rounded-lg px-2 py-1 text-xs outline-none"
+              placeholder="meta km"
+              value={goalInput}
+              onChange={(e) => setGoalInput(e.target.value)}
+              style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.text }}
+            />
+            <button
+              onClick={saveGoal}
+              className="rounded-lg px-3 py-1 text-xs font-semibold"
+              style={{ background: C.teal, color: "#04141a" }}
+            >
+              definir meta
+            </button>
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="FC repouso" value={last?.restingHr ?? "—"} unit="bpm" color={C.red} />

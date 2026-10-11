@@ -32,6 +32,179 @@ const dateKey = (d) =>
     d.getDate(),
   ).padStart(2, "0")}`;
 
+/* B1: calendário mensal — plano Treinus vs. treinos feitos */
+const WEEKDAYS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+const MONTHS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+function CalendarView({ planned, onOpenActivity }) {
+  const [monthOffset, setMonthOffset] = useState(0); // 0 = mês atual
+  const [acts, setActs] = useState(null);
+  const [dayModal, setDayModal] = useState(null);
+
+  const base = new Date();
+  const first = new Date(base.getFullYear(), base.getMonth() + monthOffset, 1);
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+  const startIso = dateKey(first);
+  const endIso = dateKey(last);
+
+  useEffect(() => {
+    setActs(null);
+    api.listGarminActivities(startIso, endIso).then(setActs);
+  }, [startIso, endIso]);
+
+  const firstWeekday = (first.getDay() + 6) % 7; // seg=0
+  const days = last.getDate();
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let d = 1; d <= days; d++) cells.push(d);
+
+  const actsByDay = {};
+  for (const a of acts || []) {
+    const d = String(a.start).slice(0, 10);
+    (actsByDay[d] ??= []).push(a);
+  }
+  const planByDay = {};
+  for (const p of planned) {
+    if (p.date >= startIso && p.date <= endIso) planByDay[p.date] = p;
+  }
+
+  const cellInfo = (d) => {
+    const iso = `${startIso.slice(0, 8)}${String(d).padStart(2, "0")}`;
+    const dayActs = actsByDay[iso] || [];
+    const plan = planByDay[iso];
+    const hasRun = dayActs.some((a) => RUN_TYPES.has(a.type));
+    if (plan && hasRun) return { state: "cumprido", dayActs, plan };
+    if (plan && dayActs.length) return { state: "feito", dayActs, plan };
+    if (plan) return { state: "planeado", dayActs, plan };
+    if (dayActs.length) return { state: "feito", dayActs, plan: null };
+    return { state: "vazio", dayActs, plan: null };
+  };
+
+  const stateStyle = {
+    cumprido: { bg: "rgba(74,222,128,.14)", border: C.green, dot: C.green },
+    feito: { bg: "rgba(251,146,60,.12)", border: C.orange, dot: C.orange },
+    planeado: { bg: "rgba(0,180,179,.08)", border: C.teal, dot: C.teal },
+    vazio: { bg: "transparent", border: C.border, dot: null },
+  };
+
+  return (
+    <Card className="p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <button
+          onClick={() => setMonthOffset((m) => m - 1)}
+          className="rounded-lg px-3 py-1.5 text-sm font-semibold"
+          style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.muted }}
+        >
+          ‹
+        </button>
+        <h3 className="text-sm font-semibold capitalize" style={{ color: C.text }}>
+          {MONTHS[first.getMonth()]} {first.getFullYear()}
+        </h3>
+        <button
+          onClick={() => setMonthOffset((m) => m + 1)}
+          className="rounded-lg px-3 py-1.5 text-sm font-semibold"
+          style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.muted }}
+        >
+          ›
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center">
+        {WEEKDAYS.map((w) => (
+          <div key={w} className="pb-1 text-[10px] font-semibold" style={{ color: C.muted }}>
+            {w}
+          </div>
+        ))}
+        {cells.map((d, i) => {
+          if (d === null) return <div key={`e${i}`} />;
+          const info = cellInfo(d);
+          const st = stateStyle[info.state];
+          const iso = `${startIso.slice(0, 8)}${String(d).padStart(2, "0")}`;
+          const isToday = iso === dateKey(new Date());
+          return (
+            <button
+              key={iso}
+              onClick={() => (info.dayActs.length || info.plan) && setDayModal(iso)}
+              className="flex h-16 flex-col items-center justify-start rounded-lg pt-1 text-xs transition-colors"
+              style={{
+                background: st.bg,
+                border: `1px solid ${isToday ? C.teal : st.border}`,
+              }}
+            >
+              <span style={{ color: C.text, fontWeight: isToday ? 700 : 400 }}>{d}</span>
+              <div className="mt-1 flex flex-col items-center gap-0.5">
+                {info.state === "cumprido" && (
+                  <span className="text-[9px]" style={{ color: C.green }}>✓ plano</span>
+                )}
+                {info.state === "planeado" && (
+                  <span className="text-[9px]" style={{ color: C.teal }}>plano</span>
+                )}
+                {info.dayActs.length > 0 && (
+                  <span className="text-[9px]" style={{ color: C.orange }}>
+                    {info.dayActs.length} treino{info.dayActs.length > 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-3 text-[10px]" style={{ color: C.muted }}>
+        <span><span style={{ color: C.green }}>✓</span> plano cumprido</span>
+        <span><span style={{ color: C.teal }}>●</span> planeado</span>
+        <span><span style={{ color: C.orange }}>●</span> treino sem plano</span>
+      </div>
+
+      {dayModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,.6)" }}
+          onClick={() => setDayModal(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl p-5"
+            style={{ background: C.card, border: `1px solid ${C.border}` }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-3 text-sm font-semibold" style={{ color: C.text }}>
+              {dayModal}
+            </h3>
+            {planByDay[dayModal] && (
+              <pre
+                className="mb-3 whitespace-pre-wrap rounded-lg p-3 text-xs"
+                style={{ background: C.card2, color: C.text, border: `1px solid ${C.border}` }}
+              >
+                {planByDay[dayModal].data?.briefing}
+              </pre>
+            )}
+            <div className="space-y-1">
+              {(actsByDay[dayModal] || []).map((a) => (
+                <button
+                  key={a.source_key}
+                  onClick={() => { setDayModal(null); onOpenActivity(a); }}
+                  className="block w-full rounded-lg px-3 py-2 text-left text-sm"
+                  style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.text }}
+                >
+                  {a.name} · {a.distance_km ? `${a.distance_km} km · ` : ""}{a.duration_s ? `${Math.round(a.duration_s / 60)} min` : ""}
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 text-right">
+              <button
+                onClick={() => setDayModal(null)}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+                style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.muted }}
+              >
+                fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 const addDays = (iso, n) => {
   const d = new Date(iso + "T12:00:00");
   d.setDate(d.getDate() + n);
@@ -60,6 +233,7 @@ export default function TrainingTab({ refreshKey }) {
   const [shoes, setShoes] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [showShoeModal, setShowShoeModal] = useState(false);
+  const [viewMode, setViewMode] = useState("lista"); // lista | calendario
 
   useEffect(() => {
     api.listPersonalRecords().then(setPrs);
@@ -270,10 +444,25 @@ export default function TrainingTab({ refreshKey }) {
           >
             Personalizado
           </button>
+          <button
+            onClick={() => setViewMode(viewMode === "lista" ? "calendario" : "lista")}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+            style={{
+              background: viewMode === "calendario" ? C.teal : C.card,
+              color: viewMode === "calendario" ? "#04141a" : C.muted,
+              border: `1px solid ${viewMode === "calendario" ? C.teal : C.border}`,
+            }}
+          >
+            Calendário
+          </button>
         </div>
       </div>
 
-      {periodId === "custom" && (
+      {viewMode === "calendario" && (
+        <CalendarView planned={planned} onOpenActivity={setSelected} />
+      )}
+
+      {viewMode === "lista" && periodId === "custom" && (
         <div className="flex flex-wrap items-center gap-4">
           {[
             { key: "start", label: "De" },
@@ -302,7 +491,7 @@ export default function TrainingTab({ refreshKey }) {
         </div>
       )}
 
-      {!stats ? (
+      {viewMode === "lista" && !stats ? (
         <Card className="p-8 text-center text-sm" style={{ color: C.muted }}>
           A carregar atividades…
         </Card>

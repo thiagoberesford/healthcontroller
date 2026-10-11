@@ -185,7 +185,31 @@ def main() -> None:
                 if pr_v:
                     r[col] = round(pr_time * (pr_v / v) ** VO2_POWER, 1)
 
-        # ---- persistir ----
+        # ---- streak de dias ativos + km acumulado do mês ----
+        km_by_day: dict = {}
+        with conn.cursor() as cur:
+            cur.execute(
+                "select start::date, distance_km, type from public.activities "
+                "where distance_km is not null order by start"
+            )
+            for d, km, ttype in cur.fetchall():
+                if ttype in ("running", "trail_running", "treadmill_running") and km:
+                    km_by_day[d] = km_by_day.get(d, 0.0) + float(km)
+        run_km_month = {}
+        streak_run = 0
+        for i, r in enumerate(rows):
+            d = r["date"]
+            # streak: dias consecutivos com atividade (tss>0); hoje vazio não quebra
+            prev_active = rows[i - 1]["tss"] > 0 if i > 0 else False
+            if r["tss"] > 0:
+                streak_run = (rows[i - 1].get("streak") or 0) + 1 if prev_active else 1
+            else:
+                streak_run = 0 if d != today else ((rows[i - 1].get("streak") or 0) if i > 0 else 0)
+            r["streak"] = streak_run
+            # km do mês (acumulado, só corridas)
+            mkey = (d.year, d.month)
+            run_km_month[mkey] = round(run_km_month.get(mkey, 0.0) + km_by_day.get(d, 0.0), 1)
+            r["month_km"] = run_km_month[mkey]
         to_write = rows if args.days is None else rows[-args.days:]
         with conn.cursor() as cur:
             cur.execute("delete from public.training_load")
@@ -194,8 +218,9 @@ def main() -> None:
                 insert into public.training_load
                     (date, tss, ctl, atl, tsb, acr, readiness,
                      hrv_base_min, hrv_base_avg, hrv_base_max,
-                     pred_5k, pred_10k, pred_half, pred_mara)
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     pred_5k, pred_10k, pred_half, pred_mara,
+                     streak, month_km)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 on conflict (date) do update set
                     tss = excluded.tss, ctl = excluded.ctl, atl = excluded.atl,
                     tsb = excluded.tsb, acr = excluded.acr,
@@ -211,7 +236,8 @@ def main() -> None:
                     (r["date"], r["tss"], r["ctl"], r["atl"], r["tsb"], r.get("acr"),
                      r.get("readiness"), r.get("hrv_base_min"), r.get("hrv_base_avg"),
                      r.get("hrv_base_max"), r.get("pred_5k"), r.get("pred_10k"),
-                     r.get("pred_half"), r.get("pred_mara"))
+                     r.get("pred_half"), r.get("pred_mara"),
+                     r.get("streak"), r.get("month_km"))
                     for r in to_write
                 ],
             )

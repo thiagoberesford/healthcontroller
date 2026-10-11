@@ -666,6 +666,79 @@ export const api = {
     }
   },
 
+  /* B2: rotinas de força */
+  async listStrengthSets(source, sourceKey) {
+    const sb = supabase();
+    if (!sb || !sourceKey) return [];
+    try {
+      const { data, error } = await sb
+        .from("strength_sets")
+        .select("*")
+        .eq("source", source)
+        .eq("source_key", sourceKey)
+        .order("id", { ascending: true });
+      if (error) return [];
+      return data || [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  async saveStrengthSet(row) {
+    const sb = supabase();
+    if (!sb) return null;
+    try {
+      const { id, ...rest } = row;
+      if (id) {
+        const { data, error } = await sb.from("strength_sets").update(rest).eq("id", id).select().single();
+        if (error) return null;
+        return data;
+      }
+      const { data, error } = await sb.from("strength_sets").insert(rest).select().single();
+      if (error) return null;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async deleteStrengthSet(id) {
+    const sb = supabase();
+    if (!sb) return false;
+    try {
+      const { error } = await sb.from("strength_sets").delete().eq("id", id);
+      return !error;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  /* B3: meta mensal de km */
+  async getMonthlyGoal() {
+    const sb = supabase();
+    if (!sb) return null;
+    try {
+      const { data, error } = await sb.from("monthly_goal").select("km").eq("id", "goal").maybeSingle();
+      if (error) return null;
+      return data?.km ?? null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async setMonthlyGoal(km) {
+    const sb = supabase();
+    if (!sb) return false;
+    try {
+      const { error } = await sb
+        .from("monthly_goal")
+        .upsert({ id: "goal", km }, { onConflict: "id" });
+      return !error;
+    } catch (e) {
+      return false;
+    }
+  },
+
   async listPlannedWorkouts() {
     const sb = supabase();
     if (!sb) return [];

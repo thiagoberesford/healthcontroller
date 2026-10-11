@@ -68,6 +68,10 @@ export default function ActivityDetail({ activity, onClose }) {
   const [shoes, setShoes] = useState([]);
   const [shoe, setShoe] = useState("");
   const [note, setNote] = useState({ rpe: null, feeling: "" });
+  const [strengthRows, setStrengthRows] = useState(null);
+  const [lastStrength, setLastStrength] = useState([]);
+
+  const isStrength = a?.type === "strength_training" || a?.type === "gym";
 
   useEffect(() => {
     let alive = true;
@@ -86,10 +90,56 @@ export default function ActivityDetail({ activity, onClose }) {
     api.getActivityNote(activity.source, activity.source_key).then((n) => {
       if (alive && n) setNote({ rpe: n.rpe ?? null, feeling: n.feeling || "" });
     });
+    if ((activity.type === "strength_training" || activity.type === "gym")) {
+      api.listStrengthSets(activity.source, activity.source_key).then((rows) => {
+        if (alive) setStrengthRows(rows || []);
+      });
+      // lembrete: séries do treino de força anterior
+      api.listGarminActivities().then((acts) => {
+        if (!alive) return;
+        const prev = acts.find(
+          (x) =>
+            (x.type === "strength_training" || x.type === "gym") &&
+            x.start < activity.start,
+        );
+        if (prev) {
+          api.listStrengthSets(prev.source, prev.source_key).then((rows) => {
+            if (alive) setLastStrength(rows || []);
+          });
+        }
+      });
+    }
     return () => {
       alive = false;
     };
   }, [activity]);
+
+  const addStrengthRow = () => {
+    setStrengthRows((rows) => [
+      ...(rows || []),
+      {
+        source: activity.source,
+        source_key: activity.source_key,
+        exercise: "",
+        sets: 3,
+        reps: 10,
+        weight_kg: null,
+      },
+    ]);
+  };
+
+  const saveStrengthRow = async (row, idx) => {
+    if (!row.exercise?.trim()) return;
+    const saved = await api.saveStrengthSet(row);
+    if (saved) {
+      setStrengthRows((rows) => rows.map((r, i) => (i === idx ? saved : r)));
+    }
+  };
+
+  const removeStrengthRow = async (row, idx) => {
+    if (row.id) await api.deleteStrengthSet(row.id);
+    setStrengthRows((rows) => rows.filter((_, i) => i !== idx));
+  };
 
   const saveNote = async (patch) => {
     const next = { ...note, ...patch };
@@ -395,8 +445,7 @@ export default function ActivityDetail({ activity, onClose }) {
         )}
 
         {/* RPE / feeling pós-treino (à Suunto Feeling) */}
-        <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl p-3" style={{ background: C.card2, border: `1px solid ${C.border}` }}>
-          <span className="text-xs font-semibold" style={{ color: C.text }}>
+        <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl p-3" style={{ background: C.card2, border: `1px solid ${C.border}` }}>          <span className="text-xs font-semibold" style={{ color: C.text }}>
             Esforço (RPE 1-10):
           </span>
           <select
@@ -419,6 +468,87 @@ export default function ActivityDetail({ activity, onClose }) {
             style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text }}
           />
         </div>
+
+        {isStrength && (
+          <div className="mb-5 rounded-xl p-4" style={{ background: C.card2, border: `1px solid ${C.border}` }}>
+            <h3 className="mb-2 text-xs font-semibold" style={{ color: C.text }}>
+              Rotina de força
+            </h3>
+            {lastStrength.length > 0 && strengthRows?.length === 0 && (
+              <p className="mb-2 text-[10px]" style={{ color: C.muted }}>
+                Última vez: {lastStrength.map((r) => `${r.exercise} ${r.sets}x${r.reps}${r.weight_kg ? ` @ ${r.weight_kg}kg` : ""}`).join(" · ")}
+              </p>
+            )}
+            <div className="space-y-2">
+              {(strengthRows || []).map((row, idx) => (
+                <div key={row.id ?? `n${idx}`} className="flex flex-wrap items-center gap-2">
+                  <input
+                    className="min-w-32 flex-1 rounded-lg px-2 py-1 text-xs outline-none"
+                    placeholder="Exercício"
+                    value={row.exercise}
+                    onChange={(e) =>
+                      setStrengthRows((rows) => rows.map((r, i) => (i === idx ? { ...r, exercise: e.target.value } : r)))
+                    }
+                    style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text }}
+                  />
+                  <input
+                    type="number"
+                    className="w-14 rounded-lg px-2 py-1 text-xs outline-none"
+                    placeholder="séries"
+                    value={row.sets}
+                    onChange={(e) =>
+                      setStrengthRows((rows) => rows.map((r, i) => (i === idx ? { ...r, sets: +e.target.value || 1 } : r)))
+                    }
+                    style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text }}
+                  />
+                  <input
+                    type="number"
+                    className="w-14 rounded-lg px-2 py-1 text-xs outline-none"
+                    placeholder="reps"
+                    value={row.reps}
+                    onChange={(e) =>
+                      setStrengthRows((rows) => rows.map((r, i) => (i === idx ? { ...r, reps: +e.target.value || 10 } : r)))
+                    }
+                    style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text }}
+                  />
+                  <input
+                    type="number"
+                    className="w-16 rounded-lg px-2 py-1 text-xs outline-none"
+                    placeholder="kg"
+                    value={row.weight_kg ?? ""}
+                    onChange={(e) =>
+                      setStrengthRows((rows) =>
+                        rows.map((r, i) => (i === idx ? { ...r, weight_kg: e.target.value ? +e.target.value : null } : r)),
+                      )
+                    }
+                    style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text }}
+                  />
+                  <button
+                    onClick={() => saveStrengthRow(row, idx)}
+                    className="rounded-lg px-2 py-1 text-[10px] font-semibold"
+                    style={{ background: C.teal, color: "#04141a" }}
+                  >
+                    guardar
+                  </button>
+                  <button
+                    onClick={() => removeStrengthRow(row, idx)}
+                    className="text-xs"
+                    style={{ color: C.red }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={addStrengthRow}
+              className="mt-2 rounded-lg px-3 py-1.5 text-xs font-semibold"
+              style={{ background: C.card, border: `1px solid ${C.border}`, color: C.muted }}
+            >
+              + exercício
+            </button>
+          </div>
+        )}
 
         {detail === null ? (
           <p className="py-8 text-center text-sm" style={{ color: C.muted }}>
