@@ -250,7 +250,7 @@ function SideCalendar({ planned, onOpenActivity }) {
   const monthLabel = `${MONTHS[first.getMonth()].slice(0, 3).toUpperCase()} ${first.getFullYear()}`;
 
   return (
-    <Card className="h-fit p-4 xl:sticky xl:top-4">
+    <Card className="h-fit p-4">
       <div className="mb-3 flex items-center justify-between">
         <button
           onClick={() => setMonthOffset((m) => m - 1)}
@@ -708,9 +708,11 @@ export default function TrainingTab({ refreshKey }) {
       {viewMode === "lista" && !stats ? (
         <Skeleton lines={4} />
       ) : viewMode === "lista" ? (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_330px]">
-          <div className="min-w-0 space-y-6">
-          <PlannedCard planned={planned} openGuide={openGuide} setOpenGuide={setOpenGuide} />
+        <>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
+            <PlannedCard planned={planned} openGuide={openGuide} setOpenGuide={setOpenGuide} />
+            <SideCalendar planned={planned} onOpenActivity={setSelected} />
+          </div>
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <StatCard
               label="Sessões"
@@ -899,9 +901,7 @@ export default function TrainingTab({ refreshKey }) {
               </div>
             )}
           </Card>
-          </div>
-          <SideCalendar planned={planned} onOpenActivity={setSelected} />
-        </div>
+        </>
       ) : null}
       {selected && <ActivityDetail activity={selected} onClose={() => setSelected(null)} />}
 
