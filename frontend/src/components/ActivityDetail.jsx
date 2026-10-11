@@ -127,7 +127,7 @@ export default function ActivityDetail({ activity, onClose }) {
   }, [distSeries, speedSeries, a.duration_s]);
 
   /* resumo da estrutura do treino: aquecimento / intervalos / desaquecimento
-     (heurística sobre o ritmo por minuto) */
+     (heurística sobre o ritmo por minuto) — linhas com barra, estilo zonas de FC */
   const structure = useMemo(() => {
     const pts = paceChart.filter((p) => p.pace);
     if (pts.length < 4) return null;
@@ -135,8 +135,21 @@ export default function ActivityDetail({ activity, onClose }) {
     const sorted = [...pts].map((p) => p.pace).sort((a, b) => a - b);
     const median = sorted[Math.floor(sorted.length / 2)];
     const spread = (sorted[sorted.length - 1] - sorted[0]) / median;
+    const avg = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null);
+    const total = pts.length;
+
     if (spread < 0.3) {
-      return { continuous: true, text: `Treino contínuo — ritmo médio ≈ ${fmt(median)}/km` };
+      return {
+        rows: [
+          {
+            label: "Contínuo",
+            min: total,
+            pct: 100,
+            value: `${total} min · ${fmt(median)}/km`,
+            color: C.teal,
+          },
+        ],
+      };
     }
     const fastThr = median * 0.95;
     const kinds = pts.map((p) => (p.pace < fastThr ? "F" : "S"));
@@ -153,31 +166,57 @@ export default function ActivityDetail({ activity, onClose }) {
     });
     if (cur) blocks.push(cur);
     if (blocks.length < 2) {
-      return { continuous: true, text: `Treino contínuo — ritmo médio ≈ ${fmt(median)}/km` };
+      return {
+        rows: [
+          {
+            label: "Contínuo",
+            min: total,
+            pct: 100,
+            value: `${total} min · ${fmt(median)}/km`,
+            color: C.teal,
+          },
+        ],
+      };
     }
     const fastPaces = [];
     blocks.forEach((b) => {
       for (let i = b.start; i <= b.end; i++) fastPaces.push(pts[i].pace);
     });
-    const avg = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null);
-    const fastAvg = avg(fastPaces);
     const lens = blocks.map((b) => b.end - b.start + 1).sort((a, b) => a - b);
     const typLen = lens[Math.floor(lens.length / 2)];
     const slowPaces = [];
     for (let i = blocks[0].start; i <= blocks[blocks.length - 1].end; i++) {
       if (kinds[i] === "S") slowPaces.push(pts[i].pace);
     }
-    const recAvg = avg(slowPaces);
     const wu = pts.slice(0, blocks[0].start);
     const cd = pts.slice(blocks[blocks.length - 1].end + 1);
-    const parts = [];
-    if (wu.length >= 2) parts.push(`Aquecimento ≈ ${wu.length} min a ${fmt(avg(wu.map((p) => p.pace)))}/km`);
-    parts.push(
-      `${blocks.length} intervalo${blocks.length === 1 ? "" : "s"} de ≈ ${typLen} min a ${fmt(fastAvg)}/km` +
-        (recAvg ? ` (recuperação ≈ ${fmt(recAvg)}/km)` : ""),
-    );
-    if (cd.length >= 2) parts.push(`Desaquecimento ≈ ${cd.length} min a ${fmt(avg(cd.map((p) => p.pace)))}/km`);
-    return { continuous: false, text: parts.join("  ·  ") };
+    const rows = [];
+    if (wu.length >= 2) {
+      rows.push({
+        label: "Aquecimento",
+        min: wu.length,
+        pct: +((wu.length / total) * 100).toFixed(1),
+        value: `${wu.length} min · ${fmt(avg(wu.map((p) => p.pace)))}/km`,
+        color: C.blue,
+      });
+    }
+    rows.push({
+      label: `${blocks.length} interval${blocks.length === 1 ? "o" : "s"} de ~${typLen} min`,
+      min: total - wu.length - cd.length,
+      pct: +(((total - wu.length - cd.length) / total) * 100).toFixed(1),
+      value: `${fmt(avg(fastPaces))}/km${slowPaces.length ? ` · rec. ${fmt(avg(slowPaces))}/km` : ""}`,
+      color: C.orange,
+    });
+    if (cd.length >= 2) {
+      rows.push({
+        label: "Desaquecimento",
+        min: cd.length,
+        pct: +((cd.length / total) * 100).toFixed(1),
+        value: `${cd.length} min · ${fmt(avg(cd.map((p) => p.pace)))}/km`,
+        color: C.purple,
+      });
+    }
+    return { rows };
   }, [paceChart]);
 
   const hrChart = useMemo(() => {
@@ -388,13 +427,28 @@ export default function ActivityDetail({ activity, onClose }) {
 
               {structure && (
                 <div className="rounded-xl p-4" style={{ background: C.card2, border: `1px solid ${C.border}` }}>
-                  <h3 className="mb-2 px-1 text-xs font-semibold" style={{ color: C.text }}>
+                  <h3 className="mb-3 px-1 text-xs font-semibold" style={{ color: C.text }}>
                     Estrutura do treino
                   </h3>
-                  <p className="text-sm leading-6" style={{ color: C.text }}>
-                    {structure.text}
-                  </p>
-                  <p className="mt-1 text-[10px]" style={{ color: C.muted }}>
+                  <div className="space-y-2.5">
+                    {structure.rows.map((r) => (
+                      <div key={r.label} className="flex items-center gap-3">
+                        <span className="w-32 shrink-0 text-xs" style={{ color: C.muted }}>
+                          {r.label}
+                        </span>
+                        <div className="h-2.5 flex-1 overflow-hidden rounded-full" style={{ background: C.card }}>
+                          <div
+                            className="h-full rounded-full"
+                            style={{ width: `${r.pct}%`, background: r.color }}
+                          />
+                        </div>
+                        <span className="w-28 text-right text-xs font-medium" style={{ color: C.text }}>
+                          {r.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 px-1 text-[10px]" style={{ color: C.muted }}>
                     heurística sobre o ritmo por minuto — valores aproximados
                   </p>
                 </div>
