@@ -317,6 +317,55 @@ const TOOL_RUNNERS: Record<string, (auth: string, args: Record<string, unknown>)
       const splits = (data.splits ?? []) as Record<string, unknown>[];
       const hr = (data.hr ?? []) as number[][];
       const hrVals = hr.map((p) => p[1]).filter((v) => v > 0);
+
+      /* ritmo minuto a minuto: a partir da série de distância (Suunto)
+         ou integrando a série de velocidade (Garmin) — permite
+         identificar intervalos por TEMPO ou DISTÂNCIA */
+      const ds = (data.dist_series ?? []) as number[][];
+      const speed = (data.speed ?? []) as number[][];
+      let cum: number[][] = ds;
+      if (!cum.length && speed.length) {
+        let d = 0;
+        let pt = 0;
+        cum = speed.map(([t, v]) => {
+          d += (Number(v) || 0) * (Number(t) - pt);
+          pt = Number(t);
+          return [Number(t), d];
+        });
+      }
+      const distAt = (t: number): number => {
+        if (!cum.length) return 0;
+        if (t <= cum[0][0]) return cum[0][1];
+        for (let i = 1; i < cum.length; i++) {
+          if (cum[i][0] >= t) {
+            const [t0, d0] = cum[i - 1];
+            const [t1, d1] = cum[i];
+            const f = t1 > t0 ? (t - t0) / (t1 - t0) : 1;
+            return d0 + (d1 - d0) * f;
+          }
+        }
+        return cum[cum.length - 1][1];
+      };
+      const hrAvgBetween = (t0: number, t1: number): number | null => {
+        const w = hr.filter((p) => p[0] >= t0 && p[0] <= t1 && p[1] > 0).map((p) => p[1]);
+        return w.length ? Math.round(w.reduce((s, v) => s + v, 0) / w.length) : null;
+      };
+      const minute_pace: Array<Record<string, number>> = [];
+      const totalS = Number(act.duration_s) || 0;
+      if (cum.length && totalS > 0) {
+        for (let m = 0; m * 60 < totalS && m < 120; m++) {
+          const t0 = m * 60;
+          const t1 = Math.min((m + 1) * 60, totalS);
+          const dm = distAt(t1) - distAt(t0);
+          minute_pace.push({
+            min: m + 1,
+            dist_m: Math.round(dm),
+            pace_sec_per_km: dm > 3 ? Math.round((1000 / dm) * (t1 - t0)) : null,
+            avg_hr: hrAvgBetween(t0, t1),
+          });
+        }
+      }
+
       out.push({
         name: act.name,
         type: act.type,
@@ -334,6 +383,7 @@ const TOOL_RUNNERS: Record<string, (auth: string, args: Record<string, unknown>)
           elev_gain_m: s.elev_gain ?? null,
           cadence_spm: s.cadence ?? null,
         })),
+        minute_pace,
         hr_points: hr.length,
         hr_avg_series: hrVals.length
           ? Math.round(hrVals.reduce((s: number, v: number) => s + v, 0) / hrVals.length)

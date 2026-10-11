@@ -88,6 +88,15 @@ def parse_sml(doc: dict) -> dict:
         step = math.ceil(len(poly) / 400)
         poly = poly[::step]
 
+    # série distância/tempo (~1 ponto a cada 2 s) — permite calcular
+    # intervalos por TEMPO ou por DISTÂNCIA (coach + site)
+    dist_series: list[list[float]] = []
+    last_t = None
+    for t, d, _alt, _cad in dist:
+        if last_t is None or t - last_t >= 2:
+            dist_series.append([round(t, 1), round(d, 1)])
+            last_t = t
+
     # splits por km a partir da série de distância
     splits = []
     if len(dist) > 2:
@@ -117,7 +126,13 @@ def parse_sml(doc: dict) -> dict:
             partial = round(total_m - lap_start_d)
             splits.append(_lap(partial, hr, lap_start_t, dist[-1][0], lap_alt_gain, lap_cad))
 
-    return {"polyline": poly, "hr": hr, "splits": splits, "gear": []}
+    return {
+        "polyline": poly,
+        "hr": hr,
+        "splits": splits,
+        "gear": [],
+        "dist_series": dist_series,
+    }
 
 
 def _lap(lap_m: int, hr, t0, t1, alt_gain, cad_hz):
@@ -178,6 +193,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--key", default=None, help="forçar um workoutKey específico")
+    ap.add_argument("--refresh", action="store_true",
+                    help="reprocessar TODOS os treinos suunto (upsert)")
     args = ap.parse_args()
 
     if not DB_URL:
@@ -187,9 +204,16 @@ def main() -> None:
     with psycopg.connect(DB_URL) as conn:
         if args.key:
             keys = [args.key]
+        elif args.refresh:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "select source_key from public.activities "
+                    "where source = 'suunto' order by start"
+                )
+                keys = [r[0] for r in cur.fetchall()]
         else:
             keys = [k for k, _ in missing_keys(conn)]
-        print(f"detalhes em falta: {len(keys)}")
+        print(f"detalhes a processar: {len(keys)}")
         n = sync_details(conn, keys, dry_run=args.dry_run)
         print(f"detalhes ok: {n}")
 

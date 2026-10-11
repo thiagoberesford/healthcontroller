@@ -85,6 +85,47 @@ export default function ActivityDetail({ activity, onClose }) {
   const gear = detail && detail !== "none" ? detail.gear || [] : [];
   const polyline = detail && detail !== "none" ? detail.polyline || [] : [];
   const hrSeries = detail && detail !== "none" ? detail.hr || [] : [];
+  const distSeries = detail && detail !== "none" ? detail.dist_series || [] : [];
+  const speedSeries = detail && detail !== "none" ? detail.speed || [] : [];
+
+  /* ritmo por minuto: da série de distância (Suunto) ou integrando a
+     velocidade (Garmin) — mostra intervalos por tempo e distância */
+  const paceChart = useMemo(() => {
+    let cum = distSeries;
+    if (!cum.length && speedSeries.length) {
+      let d = 0;
+      let pt = 0;
+      cum = speedSeries.map(([t, v]) => {
+        d += (Number(v) || 0) * (Number(t) - pt);
+        pt = Number(t);
+        return [Number(t), d];
+      });
+    }
+    if (!cum.length || !a.duration_s) return [];
+    const distAt = (t) => {
+      if (t <= cum[0][0]) return cum[0][1];
+      for (let i = 1; i < cum.length; i++) {
+        if (cum[i][0] >= t) {
+          const [t0, d0] = cum[i - 1];
+          const [t1, d1] = cum[i];
+          const f = t1 > t0 ? (t - t0) / (t1 - t0) : 1;
+          return d0 + (d1 - d0) * f;
+        }
+      }
+      return cum[cum.length - 1][1];
+    };
+    const out = [];
+    for (let m = 0; m * 60 < a.duration_s && m < 120; m++) {
+      const t0 = m * 60;
+      const t1 = Math.min((m + 1) * 60, a.duration_s);
+      const dm = distAt(t1) - distAt(t0);
+      out.push({
+        min: m + 1,
+        pace: dm > 3 ? Math.round((1000 / dm) * (t1 - t0)) : null, // s/km
+      });
+    }
+    return out;
+  }, [distSeries, speedSeries, a.duration_s]);
 
   const hrChart = useMemo(() => {
     if (!hrSeries.length) return [];
@@ -287,6 +328,45 @@ export default function ActivityDetail({ activity, onClose }) {
                       <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v} bpm`, "FC"]} />
                       {hrAvg && <ReferenceLine y={hrAvg} stroke={C.muted} strokeDasharray="4 4" />}
                       <Area type="monotone" dataKey="bpm" stroke={C.red} strokeWidth={2} fill="url(#gHR)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {paceChart.length > 1 && (
+                <div className="rounded-xl p-3" style={{ background: C.card2, border: `1px solid ${C.border}` }}>
+                  <h3 className="mb-2 px-1 text-xs font-semibold" style={{ color: C.text }}>
+                    Ritmo por minuto
+                  </h3>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <AreaChart data={paceChart}>
+                      <defs>
+                        <linearGradient id="gPace" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={C.teal} stopOpacity={0.5} />
+                          <stop offset="100%" stopColor={C.teal} stopOpacity={0.03} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+                      <XAxis dataKey="min" unit="min" stroke={C.muted} fontSize={11} />
+                      <YAxis
+                        domain={["dataMin - 10", "dataMax + 10"]}
+                        reversed
+                        unit="s"
+                        stroke={C.muted}
+                        fontSize={11}
+                      />
+                      <Tooltip
+                        contentStyle={tooltipStyle}
+                        formatter={(v) => (v ? [fmtPace(1000 / v) + " /km", "Ritmo"] : ["—"])}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="pace"
+                        stroke={C.teal}
+                        strokeWidth={2}
+                        fill="url(#gPace)"
+                        connectNulls
+                      />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
