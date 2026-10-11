@@ -17,3 +17,6 @@ dist/
 
 # Python build artifacts
 *.egg-info/
+
+# Supabase CLI
+supabase/.temp/

@@ -24,6 +24,13 @@ export default function App() {
   const [user, setUser] = useState(SUPABASE_ENABLED ? undefined : null);
   const [meals, setMeals] = useState([]);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [accountOpen, setAccountOpen] = useState(false);
+
+  /* E4: theme-color dinâmica ao alternar tema */
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", lightTheme ? "#f5f6f8" : "#0e1116");
+  }, [lightTheme]);
 
   useEffect(() => {
     if (!SUPABASE_ENABLED) return;
@@ -81,16 +88,50 @@ export default function App() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {supabaseBadge}
-          {badge}
+          {/* E5: badges colapsam num ícone de conta no mobile */}
+          <div className="hidden items-center gap-3 sm:flex">
+            {supabaseBadge}
+            {badge}
+            {user && (
+              <button
+                onClick={() => sbSignOut()}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+                style={{ background: C.card, border: `1px solid ${C.border}`, color: C.muted }}
+              >
+                Sair
+              </button>
+            )}
+          </div>
           {user && (
-            <button
-              onClick={() => sbSignOut()}
-              className="rounded-lg px-3 py-1.5 text-xs font-semibold"
-              style={{ background: C.card, border: `1px solid ${C.border}`, color: C.muted }}
-            >
-              Sair
-            </button>
+            <div className="relative sm:hidden">
+              <button
+                onClick={() => setAccountOpen((v) => !v)}
+                className="flex h-10 w-10 items-center justify-center rounded-full"
+                style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text }}
+                title="Conta"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="12" cy="8" r="4" />
+                  <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" />
+                </svg>
+              </button>
+              {accountOpen && (
+                <div
+                  className="absolute right-0 top-12 z-50 w-52 rounded-xl p-3 text-xs"
+                  style={{ background: C.card, border: `1px solid ${C.border}` }}
+                  onClick={() => setAccountOpen(false)}
+                >
+                  <p className="mb-2 break-all" style={{ color: C.muted }}>{user.email}</p>
+                  <button
+                    onClick={() => sbSignOut()}
+                    className="w-full rounded-lg px-3 py-2 font-semibold"
+                    style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.muted }}
+                  >
+                    Sair
+                  </button>
+                </div>
+              )}
+            </div>
           )}
           <button
             onClick={() => {
@@ -124,7 +165,8 @@ export default function App() {
         </div>
       </header>
 
-      <nav className="mb-6 flex gap-2 overflow-x-auto">
+      {/* E1: nav do topo só em desktop */}
+      <nav className="mb-6 hidden gap-2 overflow-x-auto sm:flex">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -161,6 +203,68 @@ export default function App() {
       </footer>
 
       {SUPABASE_ENABLED && user && <CoachChat />}
+
+      {/* E1: bottom tab bar no mobile */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 flex border-t sm:hidden"
+        style={{
+          background: C.card,
+          borderColor: C.border,
+          paddingBottom: "env(safe-area-inset-bottom)",
+        }}
+      >
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className="flex h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold"
+            style={{ color: tab === t.id ? C.teal : C.muted }}
+          >
+            <TabIcon id={t.id} active={tab === t.id} />
+            {t.label}
+          </button>
+        ))}
+      </nav>
     </div>
   );
+}
+
+function TabIcon({ id, active }) {
+  const stroke = active ? "#00b4b3" : "#7a8290";
+  const common = { width: 20, height: 20, viewBox: "0 0 24 24", fill: "none", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", stroke };
+  switch (id) {
+    case "overview":
+      return (
+        <svg {...common}>
+          <path d="M3 12h4l2-7 4 14 2-7h6" />
+        </svg>
+      );
+    case "training":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="5" r="2" />
+          <path d="M12 7v6l-3 6M12 13l3 6M8 9l-4 2M16 9l4 2" />
+        </svg>
+      );
+    case "body":
+      return (
+        <svg {...common}>
+          <path d="M12 3a7 7 0 0 1 7 7c0 3-2 4-2 6s2 2 2 4H5c0-2 2-2 2-4s-2-3-2-6a7 7 0 0 1 7-7z" />
+        </svg>
+      );
+    case "nutrition":
+      return (
+        <svg {...common}>
+          <path d="M6 3v8a3 3 0 0 0 6 0V3M9 11v10M15 3c-1.5 2-2 4-2 6s1 3 2 3 2-1 2-3-0.5-4-2-6zM17 12v9" />
+        </svg>
+      );
+    case "shoes":
+      return (
+        <svg {...common}>
+          <path d="M2 15c2-1 3-4 5-5 1.6-.8 3 .2 4 1 1 .7 2 .6 3 .3 2-.7 4.5-.4 6 1.6 1 1.4 1.6 2.6 1.6 4H3c-1 0-1.4-1.7-1-2.9z" />
+        </svg>
+      );
+    default:
+      return null;
+  }
 }

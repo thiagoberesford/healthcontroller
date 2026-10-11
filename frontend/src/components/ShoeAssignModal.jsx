@@ -36,10 +36,11 @@ export default function ShoeAssignModal({ runs, shoes, onClose, onDone }) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-xl p-5"
+        className="max-sm:fixed max-sm:inset-x-2 max-sm:bottom-0 max-sm:z-50 max-sm:rounded-b-none w-full max-w-md rounded-xl p-5"
         style={{ background: C.card, border: `1px solid ${C.border}` }}
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="mx-auto mb-1 h-1 w-10 shrink-0 rounded-full sm:hidden" style={{ background: C.border }} />
         <h3 className="mb-1 text-sm font-semibold" style={{ color: C.text }}>
           🏃 Corridas sem ténis
         </h3>

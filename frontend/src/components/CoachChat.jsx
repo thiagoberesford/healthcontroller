@@ -71,7 +71,7 @@ export default function CoachChat() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full shadow-2xl transition-transform hover:scale-105"
+          className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full shadow-2xl transition-transform hover:scale-105 max-sm:bottom-[4.75rem]"
           style={{
             background: "#00b4b3",
             border: "3px solid #ffffff40",
@@ -89,7 +89,7 @@ export default function CoachChat() {
       {/* painel */}
       {open && (
         <div
-          className="fixed bottom-5 right-5 z-40 flex w-[92vw] max-w-sm flex-col overflow-hidden rounded-xl shadow-2xl sm:w-96"
+          className="fixed bottom-5 right-5 z-40 flex w-[92vw] max-w-sm flex-col overflow-hidden rounded-xl shadow-2xl sm:w-96 max-sm:bottom-[4.75rem]"
           style={{ background: C.card, border: `1px solid ${C.border}`, height: 480 }}
         >
           <div

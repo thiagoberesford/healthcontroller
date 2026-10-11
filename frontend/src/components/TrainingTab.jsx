@@ -671,16 +671,16 @@ export default function TrainingTab({ refreshKey }) {
                   <div
                     key={a.source_key || a.id}
                     onClick={() => setSelected(a)}
-                    className="flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 transition-colors hover:brightness-125"
+                    className="flex min-w-0 cursor-pointer flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg px-3 py-3 transition-colors hover:brightness-125"
                     style={{ background: C.card2, border: `1px solid ${C.border}` }}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
                       <span
-                        className="h-2.5 w-2.5 rounded-full"
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
                         style={{ background: TYPE_COLOR[a.type] || C.muted }}
                       />
-                      <div>
-                        <div className="text-sm font-medium" style={{ color: C.text }}>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium" style={{ color: C.text }}>
                           {a.name || TYPE_LABEL[a.type] || "Atividade"}
                           {a.source === "suunto" && (
                             <span
@@ -691,13 +691,13 @@ export default function TrainingTab({ refreshKey }) {
                             </span>
                           )}
                         </div>
-                        <div className="text-xs" style={{ color: C.muted }}>
+                        <div className="truncate text-xs" style={{ color: C.muted }}>
                           {fmtDate(a.start)} · {TYPE_LABEL[a.type] || a.type} · FC méd{" "}
                           {a.avg_hr || "—"} bpm
                         </div>
                       </div>
                     </div>
-                    <div className="flex gap-4 text-xs" style={{ color: C.muted }}>
+                    <div className="flex shrink-0 flex-wrap gap-x-4 text-xs" style={{ color: C.muted }}>
                       {a.distance_km > 0 && <span>{a.distance_km.toFixed(1)} km</span>}
                       <span>{fmtTime(a.duration_s)}</span>
                       <span style={{ color: C.orange }}>

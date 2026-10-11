@@ -20,7 +20,12 @@ export const C = {
   get red() { return cssVar("--red"); },
 };
 
-export const axisProps = { get stroke() { return C.muted; }, fontSize: 11 };
+export const axisProps = {
+  get stroke() { return C.muted; },
+  fontSize: 11,
+  /* E4: menos ticks no eixo X em mobile (<640px) */
+  get interval() { return typeof window !== "undefined" && window.innerWidth < 640 ? 1 : 0; },
+};
 
 export const tooltipStyle = {
   get background() { return C.card2; },

@@ -356,10 +356,11 @@ export default function ActivityDetail({ activity, onClose }) {
       onClick={onClose}
     >
       <div
-        className="mx-auto max-w-4xl rounded-2xl p-5 sm:p-6"
+        className="max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-50 max-sm:max-h-[92vh] max-sm:overflow-y-auto max-sm:rounded-b-none mx-auto max-w-4xl rounded-2xl p-5 sm:p-6"
         style={{ background: C.card, border: `1px solid ${C.border}` }}
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="mx-auto mb-1 h-1 w-10 shrink-0 rounded-full sm:hidden" style={{ background: C.border }} />
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-bold" style={{ color: C.text }}>
