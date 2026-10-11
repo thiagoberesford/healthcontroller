@@ -550,6 +550,52 @@ export const api = {
     }
   },
 
+  /* Atribuição de ténis por treino (uma linha por treino). */
+  async listShoeAssignments() {
+    const sb = supabase();
+    if (!sb) return [];
+    try {
+      const { data, error } = await sb
+        .from("shoe_assignments")
+        .select("source,source_key,shoe_id")
+        .order("assigned_at", { ascending: true });
+      if (error) return [];
+      return data || [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  async setShoeAssignment(source, sourceKey, shoeId) {
+    const sb = supabase();
+    if (!sb || !shoeId) return false;
+    try {
+      const { error } = await sb
+        .from("shoe_assignments")
+        .upsert({ source, source_key: sourceKey, shoe_id: shoeId }, {
+          onConflict: "source,source_key",
+        });
+      return !error;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  async removeShoeAssignment(source, sourceKey) {
+    const sb = supabase();
+    if (!sb) return false;
+    try {
+      const { error } = await sb
+        .from("shoe_assignments")
+        .delete()
+        .eq("source", source)
+        .eq("source_key", sourceKey);
+      return !error;
+    } catch (e) {
+      return false;
+    }
+  },
+
   async listPlannedWorkouts() {
     const sb = supabase();
     if (!sb) return [];

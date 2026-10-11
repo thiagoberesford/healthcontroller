@@ -16,6 +16,7 @@ import { C, axisProps, tooltipStyle, fmtTime } from "../theme.js";
 import { api, SUPABASE_ENABLED } from "../lib/api.js";
 import { RUN_TYPES, TYPE_LABEL, TYPE_COLOR, fmtDate, fmtKcal, fmtRecord, dayMonth } from "../lib/garmin.js";
 import ActivityDetail from "./ActivityDetail.jsx";
+import ShoeAssignModal from "./ShoeAssignModal.jsx";
 
 const PERIODS = [
   { id: "day", label: "Hoje", days: 1 },
@@ -56,11 +57,36 @@ export default function TrainingTab({ refreshKey }) {
   const [planned, setPlanned] = useState([]);
   const [openGuide, setOpenGuide] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [shoes, setShoes] = useState([]);
+  const [assignments, setAssignments] = useState([]);
+  const [showShoeModal, setShowShoeModal] = useState(false);
 
   useEffect(() => {
     api.listPersonalRecords().then(setPrs);
     api.listPlannedWorkouts().then(setPlanned);
+    api.listShoes().then(setShoes);
+    api.listShoeAssignments().then(setAssignments);
   }, [refreshKey]);
+
+  /* corridas novas sem ténis atribuído -> popup de confirmação */
+  const unshodRuns = useMemo(() => {
+    if (!acts || !shoes.length) return [];
+    return acts
+      .filter((a) => RUN_TYPES.has(a.type) && String(a.start).slice(0, 10) >= "2026-10-05")
+      .filter(
+        (a) => !assignments.some((x) => x.source === a.source && x.source_key === a.source_key),
+      )
+      .map((a) => ({
+        source: a.source,
+        source_key: a.source_key,
+        date: String(a.start).slice(0, 10),
+        km: a.distance_km,
+      }));
+  }, [acts, assignments, shoes]);
+
+  useEffect(() => {
+    if (unshodRuns.length && shoes.some((s) => !s.retired)) setShowShoeModal(true);
+  }, [unshodRuns.length, shoes]);
 
   /* enquanto houver treinos futuros por enviar, rebuscar o estado
      (o worker marca push_status='watch' em até ~5 min) */
@@ -458,6 +484,27 @@ export default function TrainingTab({ refreshKey }) {
         </>
       )}
       {selected && <ActivityDetail activity={selected} onClose={() => setSelected(null)} />}
+
+      {unshodRuns.length > 0 && !selected && (
+        <button
+          onClick={() => setShowShoeModal(true)}
+          className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+          style={{ background: "rgba(0,180,179,.12)", border: `1px solid ${C.teal}`, color: C.teal }}
+        >
+          🏃 {unshodRuns.length} corrida{unshodRuns.length === 1 ? "" : "s"} sem ténis — atribuir
+        </button>
+      )}
+      {showShoeModal && shoes.length > 0 && (
+        <ShoeAssignModal
+          runs={unshodRuns}
+          shoes={shoes}
+          onClose={() => setShowShoeModal(false)}
+          onDone={() => {
+            setShowShoeModal(false);
+            api.listShoeAssignments().then(setAssignments);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -65,6 +65,8 @@ function MapCard({ polyline }) {
 
 export default function ActivityDetail({ activity, onClose }) {
   const [detail, setDetail] = useState(null);
+  const [shoes, setShoes] = useState([]);
+  const [shoe, setShoe] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -72,10 +74,24 @@ export default function ActivityDetail({ activity, onClose }) {
     api.getActivityDetail(activity.source, activity.source_key).then((d) => {
       if (alive) setDetail(d || "none");
     });
+    api.listShoes().then((s) => {
+      if (alive) setShoes(s.filter((x) => !x.retired));
+    });
+    api.listShoeAssignments().then((asg) => {
+      if (!alive) return;
+      const mine = asg.find((x) => x.source === activity.source && x.source_key === activity.source_key);
+      setShoe(mine?.shoe_id || "");
+    });
     return () => {
       alive = false;
     };
   }, [activity]);
+
+  const changeShoe = async (shoeId) => {
+    setShoe(shoeId);
+    if (shoeId) await api.setShoeAssignment(activity.source, activity.source_key, shoeId);
+    else await api.removeShoeAssignment(activity.source, activity.source_key);
+  };
 
   const a = activity;
   const isRun = RUN_TYPES.has(a.type);
@@ -345,6 +361,28 @@ export default function ActivityDetail({ activity, onClose }) {
             </div>
           ))}
         </div>
+
+        {isRun && shoes.length > 0 && (
+          <div className="mb-5 flex items-center gap-2 text-sm">
+            <span className="text-xs" style={{ color: C.muted }}>Ténis:</span>
+            <select
+              className="rounded-lg px-2 py-1 text-xs outline-none"
+              value={shoe}
+              onChange={(e) => changeShoe(e.target.value)}
+              style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.text }}
+            >
+              <option value="">— sem ténis —</option>
+              {shoes.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}{s.is_current ? " (em uso)" : ""}
+                </option>
+              ))}
+            </select>
+            <span className="text-[10px]" style={{ color: C.muted }}>
+              conta para o desgaste do par
+            </span>
+          </div>
+        )}
 
         {detail === null ? (
           <p className="py-8 text-center text-sm" style={{ color: C.muted }}>
