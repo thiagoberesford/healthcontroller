@@ -207,6 +207,186 @@ function CalendarView({ planned, onOpenActivity }) {
   );
 }
 
+/* Calendário lateral do mês: treinos feitos (qualquer tipo) + plano Treinus */
+function SideCalendar({ planned, onOpenActivity }) {
+  const [monthOffset, setMonthOffset] = useState(0); // 0 = mês atual
+  const [acts, setActs] = useState(null);
+  const [dayModal, setDayModal] = useState(null);
+
+  const base = new Date();
+  const first = new Date(base.getFullYear(), base.getMonth() + monthOffset, 1);
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+  const startIso = dateKey(first);
+  const endIso = dateKey(last);
+
+  useEffect(() => {
+    setActs(null);
+    api.listGarminActivities(startIso, endIso).then(setActs);
+  }, [startIso, endIso]);
+
+  const firstWeekday = (first.getDay() + 6) % 7; // seg=0
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let d = 1; d <= last.getDate(); d++) cells.push(d);
+
+  const actsByDay = {};
+  const activeDays = new Set();
+  let km = 0;
+  let hours = 0;
+  for (const a of acts || []) {
+    const iso = String(a.start).slice(0, 10);
+    (actsByDay[iso] ??= []).push(a);
+    activeDays.add(iso);
+    km += a.distance_km || 0;
+    hours += (a.duration_s || 0) / 3600;
+  }
+  const planByDay = {};
+  for (const p of planned) {
+    if (p.date >= startIso && p.date <= endIso) planByDay[p.date] = p;
+  }
+
+  const isoOf = (d) => `${startIso.slice(0, 8)}${String(d).padStart(2, "0")}`;
+  const todayIso = dateKey(new Date());
+  const monthLabel = `${MONTHS[first.getMonth()].slice(0, 3).toUpperCase()} ${first.getFullYear()}`;
+
+  return (
+    <Card className="h-fit p-4 xl:sticky xl:top-4">
+      <div className="mb-3 flex items-center justify-between">
+        <button
+          onClick={() => setMonthOffset((m) => m - 1)}
+          className="rounded-lg px-2.5 py-1 text-sm font-semibold"
+          style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.muted }}
+        >
+          ‹
+        </button>
+        <h3 className="text-sm font-semibold" style={{ color: C.text }}>
+          {monthLabel}
+        </h3>
+        <button
+          onClick={() => setMonthOffset((m) => m + 1)}
+          className="rounded-lg px-2.5 py-1 text-sm font-semibold"
+          style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.muted }}
+        >
+          ›
+        </button>
+      </div>
+
+      <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl py-2 text-center" style={{ background: C.card2, border: `1px solid ${C.border}` }}>
+        <div>
+          <p className="text-sm font-bold" style={{ color: C.teal }}>{activeDays.size}</p>
+          <p className="text-[10px]" style={{ color: C.muted }}>dias ativos</p>
+        </div>
+        <div>
+          <p className="text-sm font-bold" style={{ color: C.text }}>{km.toFixed(0)}</p>
+          <p className="text-[10px]" style={{ color: C.muted }}>km</p>
+        </div>
+        <div>
+          <p className="text-sm font-bold" style={{ color: C.text }}>{hours.toFixed(1)}</p>
+          <p className="text-[10px]" style={{ color: C.muted }}>horas</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1.5 text-center">
+        {WEEKDAYS.map((w) => (
+          <div key={w} className="pb-0.5 text-[10px] font-semibold" style={{ color: C.muted }}>
+            {w.slice(0, 3)}
+          </div>
+        ))}
+        {cells.map((d, i) => {
+          if (d === null) return <div key={`e${i}`} />;
+          const iso = isoOf(d);
+          const dayActs = actsByDay[iso] || [];
+          const plan = planByDay[iso];
+          const isToday = iso === todayIso;
+          let bg = C.card2;
+          let border = C.border;
+          let color = C.muted;
+          if (dayActs.length && plan) {
+            bg = C.green; border = C.green; color = "#04141a";
+          } else if (dayActs.length) {
+            bg = C.orange; border = C.orange; color = "#04141a";
+          } else if (plan) {
+            border = C.teal; color = C.teal;
+          }
+          return (
+            <button
+              key={iso}
+              onClick={() => (dayActs.length || plan) && setDayModal(iso)}
+              className="mx-auto flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold transition-transform hover:scale-105"
+              style={{
+                background: bg,
+                border: `1.5px solid ${isToday ? C.text : border}`,
+                color: isToday && !dayActs.length && !plan ? C.text : color,
+              }}
+            >
+              {d}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[10px]" style={{ color: C.muted }}>
+        <span><span style={{ color: C.orange }}>●</span> treino feito</span>
+        <span><span style={{ color: C.teal }}>○</span> planeado</span>
+        <span><span style={{ color: C.green }}>●</span> plano cumprido</span>
+      </div>
+
+      {dayModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+          style={{ background: "rgba(0,0,0,.6)" }}
+          onClick={() => setDayModal(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl p-5"
+            style={{ background: C.card, border: `1px solid ${C.border}` }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-3 text-sm font-semibold" style={{ color: C.text }}>
+              {fmtDate(dayModal)}
+            </h3>
+            {planByDay[dayModal] && (
+              <div className="mb-3 rounded-lg p-3 text-xs" style={{ background: C.card2, border: `1px solid ${C.teal}`, color: C.text }}>
+                <span style={{ color: C.teal }}>Plano: </span>
+                {planByDay[dayModal].name || "Treinus"}
+              </div>
+            )}
+            <div className="space-y-1">
+              {(actsByDay[dayModal] || []).map((a) => (
+                <button
+                  key={a.source_key}
+                  onClick={() => {
+                    setDayModal(null);
+                    onOpenActivity(a);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm"
+                  style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.text }}
+                >
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: TYPE_COLOR[a.type] || C.muted }} />
+                  <span className="min-w-0 flex-1 truncate">{a.name || TYPE_LABEL[a.type] || "Atividade"}</span>
+                  <span className="shrink-0 text-xs" style={{ color: C.muted }}>
+                    {a.distance_km ? `${a.distance_km.toFixed(1)} km · ` : ""}
+                    {a.duration_s ? fmtTime(a.duration_s) : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 text-right">
+              <button
+                onClick={() => setDayModal(null)}
+                className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+                style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.muted }}
+              >
+                fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 const addDays = (iso, n) => {
   const d = new Date(iso + "T12:00:00");
   d.setDate(d.getDate() + n);
@@ -527,8 +707,9 @@ export default function TrainingTab({ refreshKey }) {
 
       {viewMode === "lista" && !stats ? (
         <Skeleton lines={4} />
-      ) : (
-        <>
+      ) : viewMode === "lista" ? (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_330px]">
+          <div className="min-w-0 space-y-6">
           <PlannedCard planned={planned} openGuide={openGuide} setOpenGuide={setOpenGuide} />
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <StatCard
@@ -718,8 +899,10 @@ export default function TrainingTab({ refreshKey }) {
               </div>
             )}
           </Card>
-        </>
-      )}
+          </div>
+          <SideCalendar planned={planned} onOpenActivity={setSelected} />
+        </div>
+      ) : null}
       {selected && <ActivityDetail activity={selected} onClose={() => setSelected(null)} />}
 
       {unshodRuns.length > 0 && !selected && (
