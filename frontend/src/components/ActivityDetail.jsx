@@ -71,6 +71,7 @@ export default function ActivityDetail({ activity, onClose }) {
   const [strengthRows, setStrengthRows] = useState(null);
   const [lastStrength, setLastStrength] = useState([]);
 
+  const a = activity;
   const isStrength = a?.type === "strength_training" || a?.type === "gym";
 
   useEffect(() => {
@@ -153,7 +154,6 @@ export default function ActivityDetail({ activity, onClose }) {
     else await api.removeShoeAssignment(activity.source, activity.source_key);
   };
 
-  const a = activity;
   const isRun = RUN_TYPES.has(a.type);
   const pace = a.distance_km > 0 && a.duration_s ? a.duration_s / a.distance_km : null;
 
