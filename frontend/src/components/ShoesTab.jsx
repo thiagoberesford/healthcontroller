@@ -211,7 +211,6 @@ export default function ShoesTab({ refreshKey }) {
                         </span>
                       )}
                     </div>
-                    </span>
                     <span className="flex items-center gap-2">
                       <label
                         className="cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold"
