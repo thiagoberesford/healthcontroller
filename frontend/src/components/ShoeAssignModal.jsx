@@ -10,7 +10,10 @@ export default function ShoeAssignModal({ runs, shoes, onClose, onDone }) {
   const [sel, setSel] = useState({});
   const [busy, setBusy] = useState(false);
 
-  const shoeFor = (r) => sel[r.source_key] || current?.id || "";
+  const shoeFor = (r) => sel[r.source_key] || (current?.id && fits(current, r) ? current.id : "");
+
+  /* um par só pode receber corridas desde a sua data de início */
+  const fits = (s, r) => !s.start_date || s.start_date <= r.date;
 
   const save = async () => {
     setBusy(true);
@@ -57,11 +60,14 @@ export default function ShoeAssignModal({ runs, shoes, onClose, onDone }) {
                 onChange={(e) => setSel({ ...sel, [r.source_key]: e.target.value })}
                 style={inputStyle}
               >
-                {shoes.filter((s) => !s.retired).map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}{s.is_current ? " (em uso)" : ""}
-                  </option>
-                ))}
+                <option value="">— sem ténis —</option>
+                {shoes
+                  .filter((s) => !s.retired && fits(s, r))
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}{s.is_current ? " (em uso)" : ""}
+                    </option>
+                  ))}
               </select>
             </div>
           ))}

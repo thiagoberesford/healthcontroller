@@ -492,7 +492,7 @@ export const api = {
     }
   },
 
-  async addShoe({ name, target_km = 700, start_km = 0 }) {
+  async addShoe({ name, target_km = 700, start_km = 0, start_date = null }) {
     const sb = supabase();
     if (!sb || !name?.trim()) return null;
     const id = `shoe|${name.trim()}`
@@ -510,6 +510,7 @@ export const api = {
           name: name.trim(),
           target_km,
           start_km,
+          start_date,
         })
         .select()
         .single();
@@ -593,6 +594,26 @@ export const api = {
       return !error;
     } catch (e) {
       return false;
+    }
+  },
+
+  /* foto do par: ficheiro próprio do utilizador -> bucket 'shoes' */
+  async uploadShoePhoto(shoeId, file) {
+    const sb = supabase();
+    if (!sb || !file) return null;
+    try {
+      const ext = (file.name.split(".").pop() || "jpg").toLowerCase().slice(0, 4);
+      const path = `${shoeId}/${crypto.randomUUID()}.${ext}`;
+      const { error } = await sb.storage.from("shoes").upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+      if (error) return null;
+      const { data } = sb.storage.from("shoes").getPublicUrl(path);
+      const saved = await this.updateShoe(shoeId, { photo_url: data.publicUrl });
+      return saved;
+    } catch (e) {
+      return null;
     }
   },
 

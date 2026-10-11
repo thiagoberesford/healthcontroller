@@ -2,6 +2,32 @@ import React, { useEffect, useState } from "react";
 import { Card } from "./ui.jsx";
 import { C } from "../theme.js";
 import { api } from "../lib/api.js";
+import { fmtDate } from "../lib/garmin.js";
+
+/* ícone genérico (SVG próprio) quando não há foto do par */
+function ShoeIcon({ photo, size = 40 }) {
+  if (photo) {
+    return (
+      <img
+        src={photo}
+        alt=""
+        className="shrink-0 rounded-lg object-cover"
+        style={{ width: size, height: size, border: `1px solid ${C.border}` }}
+      />
+    );
+  }
+  return (
+    <div
+      className="flex shrink-0 items-center justify-center rounded-lg"
+      style={{ width: size, height: size, background: C.card2, border: `1px solid ${C.border}` }}
+    >
+      <svg width={size - 10} height={size - 10} viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="1.6">
+        <path d="M2 15c2-1 3-4 5-5 1.6-.8 3 .2 4 1 1 .7 2 .6 3 .3 2-.7 4.5-.4 6 1.6 1 1.4 1.6 2.6 1.6 4H3c-1 0-1.4-1.7-1-2.9z" />
+        <path d="M8 13.5c1.5 1 3.5 1 5 .4" />
+      </svg>
+    </div>
+  );
+}
 
 export default function ShoesTab({ refreshKey }) {
   const [shoes, setShoes] = useState(null);
@@ -10,6 +36,7 @@ export default function ShoesTab({ refreshKey }) {
   const [name, setName] = useState("");
   const [target, setTarget] = useState("700");
   const [start, setStart] = useState("0");
+  const [startDate, setStartDate] = useState("");
   const [msg, setMsg] = useState(null);
 
   const load = async () => {
@@ -42,7 +69,12 @@ export default function ShoesTab({ refreshKey }) {
     }
     const t = parseFloat(String(target).replace(",", ".")) || 700;
     const s = parseFloat(String(start).replace(",", ".")) || 0;
-    const saved = await api.addShoe({ name, target_km: t, start_km: s });
+    const saved = await api.addShoe({
+      name,
+      target_km: t,
+      start_km: s,
+      start_date: startDate || null,
+    });
     if (!saved) {
       setMsg("Não foi possível guardar (Supabase?).");
       return;
@@ -50,7 +82,15 @@ export default function ShoesTab({ refreshKey }) {
     setName("");
     setTarget("700");
     setStart("0");
+    setStartDate("");
     setMsg(null);
+    load();
+  };
+
+  const uploadPhoto = async (shoe, file) => {
+    if (!file) return;
+    const ok = await api.uploadShoePhoto(shoe.id, file);
+    if (!ok) setMsg("Não foi possível carregar a foto.");
     load();
   };
 
@@ -99,6 +139,14 @@ export default function ShoesTab({ refreshKey }) {
             style={inputStyle}
             title="Desgaste que o par já tem (calibrar o contador)"
           />
+          <input
+            type="date"
+            className="w-36 rounded-lg px-3 py-2 text-sm outline-none"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            style={inputStyle}
+            title="Data em que começaste a usar o par (filtra as corridas no popup)"
+          />
           <button
             onClick={add}
             className="rounded-lg px-4 py-2 text-sm font-semibold"
@@ -107,6 +155,10 @@ export default function ShoesTab({ refreshKey }) {
             Adicionar
           </button>
         </div>
+        <p className="mt-1 text-[10px]" style={{ color: C.muted }}>
+          A data de início filtra as corridas no popup: um par só pode receber corridas desde que
+          entrou em uso. Foto: usa fotografias tuas dos ténis (sem copyright de terceiros).
+        </p>
         {msg && <p className="mt-2 text-xs" style={{ color: C.orange }}>{msg}</p>}
       </Card>
 
@@ -133,7 +185,8 @@ export default function ShoesTab({ refreshKey }) {
                   }}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="flex items-center gap-2">
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                      <ShoeIcon photo={s.photo_url} />
                       <span className="text-sm font-medium" style={{ color: s.retired ? C.muted : C.text }}>
                         {s.name}
                       </span>
@@ -152,8 +205,27 @@ export default function ShoesTab({ refreshKey }) {
                           altura de trocar
                         </span>
                       )}
+                      {s.start_date && (
+                        <span className="text-xs" style={{ color: C.muted }}>
+                          desde {fmtDate(s.start_date)}
+                        </span>
+                      )}
+                    </div>
                     </span>
                     <span className="flex items-center gap-2">
+                      <label
+                        className="cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold"
+                        style={{ background: C.card, border: `1px solid ${C.border}`, color: C.muted }}
+                        title="Fotografar/carregar foto do par (usa fotos tuas)"
+                      >
+                        {s.photo_url ? "trocar foto" : "foto"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => uploadPhoto(s, e.target.files?.[0])}
+                        />
+                      </label>
                       {!s.is_current && !s.retired && (
                         <button
                           onClick={() => setCurrent(s.id)}
