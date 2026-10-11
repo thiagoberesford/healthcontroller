@@ -76,6 +76,8 @@ const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+const isoOf = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const nowTime = () => new Date().toTimeString().slice(0, 5);
 
 export const api = {
@@ -258,13 +260,24 @@ export const api = {
 
   async addMeal(text, items, time) {
     const totals = items ? computeTotals(items) : null;
+    /* refeições registadas depois da meia-noite (até às 05:00)
+       pertencem ao dia anterior — o dia do utilizador termina ao deitar */
+    const now = new Date();
+    let date;
+    if (now.getHours() < 5) {
+      const y = new Date(now);
+      y.setDate(y.getDate() - 1);
+      date = isoOf(y);
+    } else {
+      date = todayIso();
+    }
     const sb = supabase();
     if (sb) {
       try {
         const { data, error } = await sb
           .from("meals")
           .insert({
-            date: todayIso(),
+            date,
             time: time || nowTime(),
             text,
             items: items || [],
