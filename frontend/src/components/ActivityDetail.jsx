@@ -88,8 +88,7 @@ export default function ActivityDetail({ activity, onClose }) {
   const distSeries = detail && detail !== "none" ? detail.dist_series || [] : [];
   const speedSeries = detail && detail !== "none" ? detail.speed || [] : [];
 
-  /* ritmo por minuto: da série de distância (Suunto) ou integrando a
-     velocidade (Garmin) — mostra intervalos por tempo e distância */
+
   const paceChart = useMemo(() => {
     let cum = distSeries;
     if (!cum.length && speedSeries.length) {
@@ -126,6 +125,60 @@ export default function ActivityDetail({ activity, onClose }) {
     }
     return out;
   }, [distSeries, speedSeries, a.duration_s]);
+
+  /* resumo da estrutura do treino: aquecimento / intervalos / desaquecimento
+     (heurística sobre o ritmo por minuto) */
+  const structure = useMemo(() => {
+    const pts = paceChart.filter((p) => p.pace);
+    if (pts.length < 4) return null;
+    const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+    const sorted = [...pts].map((p) => p.pace).sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const spread = (sorted[sorted.length - 1] - sorted[0]) / median;
+    if (spread < 0.3) {
+      return { continuous: true, text: `Treino contínuo — ritmo médio ≈ ${fmt(median)}/km` };
+    }
+    const fastThr = median * 0.95;
+    const kinds = pts.map((p) => (p.pace < fastThr ? "F" : "S"));
+    const blocks = [];
+    let cur = null;
+    kinds.forEach((k, i) => {
+      if (k === "F") {
+        if (!cur) cur = { start: i, end: i };
+        else cur.end = i;
+      } else if (cur) {
+        blocks.push(cur);
+        cur = null;
+      }
+    });
+    if (cur) blocks.push(cur);
+    if (blocks.length < 2) {
+      return { continuous: true, text: `Treino contínuo — ritmo médio ≈ ${fmt(median)}/km` };
+    }
+    const fastPaces = [];
+    blocks.forEach((b) => {
+      for (let i = b.start; i <= b.end; i++) fastPaces.push(pts[i].pace);
+    });
+    const avg = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null);
+    const fastAvg = avg(fastPaces);
+    const lens = blocks.map((b) => b.end - b.start + 1).sort((a, b) => a - b);
+    const typLen = lens[Math.floor(lens.length / 2)];
+    const slowPaces = [];
+    for (let i = blocks[0].start; i <= blocks[blocks.length - 1].end; i++) {
+      if (kinds[i] === "S") slowPaces.push(pts[i].pace);
+    }
+    const recAvg = avg(slowPaces);
+    const wu = pts.slice(0, blocks[0].start);
+    const cd = pts.slice(blocks[blocks.length - 1].end + 1);
+    const parts = [];
+    if (wu.length >= 2) parts.push(`Aquecimento ≈ ${wu.length} min a ${fmt(avg(wu.map((p) => p.pace)))}/km`);
+    parts.push(
+      `${blocks.length} intervalo${blocks.length === 1 ? "" : "s"} de ≈ ${typLen} min a ${fmt(fastAvg)}/km` +
+        (recAvg ? ` (recuperação ≈ ${fmt(recAvg)}/km)` : ""),
+    );
+    if (cd.length >= 2) parts.push(`Desaquecimento ≈ ${cd.length} min a ${fmt(avg(cd.map((p) => p.pace)))}/km`);
+    return { continuous: false, text: parts.join("  ·  ") };
+  }, [paceChart]);
 
   const hrChart = useMemo(() => {
     if (!hrSeries.length) return [];
@@ -333,42 +386,17 @@ export default function ActivityDetail({ activity, onClose }) {
                 </div>
               )}
 
-              {paceChart.length > 1 && (
-                <div className="rounded-xl p-3" style={{ background: C.card2, border: `1px solid ${C.border}` }}>
+              {structure && (
+                <div className="rounded-xl p-4" style={{ background: C.card2, border: `1px solid ${C.border}` }}>
                   <h3 className="mb-2 px-1 text-xs font-semibold" style={{ color: C.text }}>
-                    Ritmo por minuto
+                    Estrutura do treino
                   </h3>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <AreaChart data={paceChart}>
-                      <defs>
-                        <linearGradient id="gPace" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={C.teal} stopOpacity={0.5} />
-                          <stop offset="100%" stopColor={C.teal} stopOpacity={0.03} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-                      <XAxis dataKey="min" unit="min" stroke={C.muted} fontSize={11} />
-                      <YAxis
-                        domain={["dataMin - 10", "dataMax + 10"]}
-                        reversed
-                        unit="s"
-                        stroke={C.muted}
-                        fontSize={11}
-                      />
-                      <Tooltip
-                        contentStyle={tooltipStyle}
-                        formatter={(v) => (v ? [fmtPace(1000 / v) + " /km", "Ritmo"] : ["—"])}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="pace"
-                        stroke={C.teal}
-                        strokeWidth={2}
-                        fill="url(#gPace)"
-                        connectNulls
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  <p className="text-sm leading-6" style={{ color: C.text }}>
+                    {structure.text}
+                  </p>
+                  <p className="mt-1 text-[10px]" style={{ color: C.muted }}>
+                    heurística sobre o ritmo por minuto — valores aproximados
+                  </p>
                 </div>
               )}
 

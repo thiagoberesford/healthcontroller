@@ -165,8 +165,9 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
       return;
     }
     const it = preview.items[i];
+    const name = (manualEdit.name || it.label).trim();
     const saved = await api.addFood({
-      name: it.label,
+      name,
       brand: it.brand || "",
       kcal,
       protein: num(pr),
@@ -184,6 +185,7 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
       j === i
         ? {
             ...x,
+            label: name,
             kcal_100: kcal,
             protein_100: num(pr),
             carbs_100: num(cb),
@@ -551,7 +553,7 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
                             </span>
                             {it.estimated && (
                               <button
-                                onClick={() => setManualEdit({ i, kcal: "", protein: "", carbs: "", fat: "" })}
+                                onClick={() => setManualEdit({ i, name: it.label, kcal: "", protein: "", carbs: "", fat: "" })}
                                 className="rounded-lg px-2 py-1 text-xs font-semibold"
                                 style={{ background: C.card, border: `1px solid ${C.border}`, color: C.orange }}
                                 title="Definir os valores reais deste alimento (fica guardado)"
@@ -564,9 +566,16 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
                         {manualEdit?.i === i && (
                           <div className="mt-2 rounded-lg p-2" style={{ background: C.card, border: `1px solid ${C.border}` }}>
                             <p className="mb-2 text-xs" style={{ color: C.muted }}>
-                              Valores por 100 g/ml de <b style={{ color: C.text }}>{it.label}</b> — ficam guardados na tua base:
+                              Fica guardado na tua base:
                             </p>
                             <div className="flex flex-wrap items-center gap-2">
+                              <input
+                                className="min-w-40 flex-1 rounded-lg px-2 py-1 text-xs outline-none"
+                                placeholder="Nome do alimento"
+                                value={manualEdit.name}
+                                onChange={(e) => setManualEdit({ ...manualEdit, name: e.target.value })}
+                                style={inputStyle}
+                              />
                               <input
                                 type="number"
                                 className="w-20 rounded-lg px-2 py-1 text-xs outline-none"
