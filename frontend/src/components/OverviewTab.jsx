@@ -224,7 +224,7 @@ export default function OverviewTab({ meals, refreshKey }) {
         <Card className="p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
             <h3 className="text-sm font-semibold" style={{ color: C.text }}>
-              Forma (CTL · ATL · TSB, 120d)
+              Forma (CTL · ATL · TSB, 14d)
             </h3>
             <span className="flex items-center gap-2 text-xs" style={{ color: C.muted }}>
               {tsbState && (
@@ -251,7 +251,7 @@ export default function OverviewTab({ meals, refreshKey }) {
             </span>
           </div>
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={tload.map((r) => ({ ...r, label: dayMonth(r.date) }))}>
+            <LineChart data={tload.slice(-14).map((r) => ({ ...r, label: dayMonth(r.date) }))}>
               <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
               <XAxis dataKey="label" {...axisProps} interval={tickInterval(tload.length)} minTickGap={32} />
               <YAxis {...axisProps} />

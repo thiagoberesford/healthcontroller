@@ -183,16 +183,30 @@ def map_daily(entries: dict[str, list[dict]]) -> list[dict]:
             row["_energy_j"] = (row.get("_energy_j") or 0) + energy
         if data.get("ascentMeters"):
             row["floors"] = (row.get("floors") or 0) + data["ascentMeters"]
+    # A API devolve cada sono duplicado e, por vezes, em DUAS versões com
+    # o mesmo sleepId: um segmento parcial (isNap=True, curto) e a noite
+    # completa (isNap=False). Por sleepId guardamos a versão MAIS LONGA.
+    best_sleep: dict[str, tuple[float, dict, str]] = {}
     for e in entries.get("sleep", []):
         data = e.get("entryData") or {}
+        dur_s = data.get("duration") or data.get("durationMin") or data.get("sleepMin") or 0
+        sid = data.get("sleepId") or data.get("bedtimeStart") or (e.get("timestamp") or "")[:16]
+        if sid not in best_sleep or dur_s > best_sleep[sid][0]:
+            best_sleep[sid] = (dur_s, data, e.get("timestamp") or "")
+
+    nap_hours: dict[str, float] = {}
+    for dur_s, data, ets in best_sleep.values():
         if data.get("isNap"):
+            # soneca: soma ao sono do dia em que acontece (o app Suunto
+            # conta naps no total diário); FC de repouso fica do sono noturno
+            nd = (ets or data.get("bedtimeStart") or "")[:10]
+            if nd and dur_s:
+                nap_hours[nd] = nap_hours.get(nd, 0.0) + dur_s / 3600
             continue
         # atribuir o sono ao dia em que se acorda (bedtimeEnd = manhã);
         # timestamp/bedtimeStart apontam para a noite anterior
-        d = (data.get("bedtimeEnd") or e.get("timestamp") or "")[:10]
+        d = (data.get("bedtimeEnd") or ets or "")[:10]
         row = by_day.setdefault(d, {"date": d, "source": "suunto"})
-        # duracao: campo 'duration' em SEGUNDOS (duracaoMin/sleepMin nao existem)
-        dur_s = data.get("duration") or data.get("durationMin") or data.get("sleepMin")
         if dur_s:
             row["sleep_hours"] = round(dur_s / 3600, 1)
         hr = data.get("hrAvg")
@@ -200,6 +214,9 @@ def map_daily(entries: dict[str, list[dict]]) -> list[dict]:
             hr = round(hr * 60)
         if hr:
             row["resting_hr"] = round(hr)
+    for nd, nh in nap_hours.items():
+        nrow = by_day.setdefault(nd, {"date": nd, "source": "suunto"})
+        nrow["sleep_hours"] = round((nrow.get("sleep_hours") or 0) + nh, 1)
     for e in entries.get("recovery", []):
         d = (e.get("timestamp") or e.get("date") or "")[:10]
         data = e.get("entryData") or {}
