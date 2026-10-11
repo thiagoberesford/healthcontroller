@@ -13,7 +13,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Card, StatCard } from "./ui.jsx";
+import { Card, StatCard, Skeleton } from "./ui.jsx";
 import { C, axisProps, tooltipStyle, fmtTime } from "../theme.js";
 import { api, SUPABASE_ENABLED } from "../lib/api.js";
 import { RUN_TYPES, TYPE_LABEL, TYPE_COLOR, fmtDate, fmtKcal, fmtRecord, dayMonth } from "../lib/garmin.js";
@@ -526,9 +526,7 @@ export default function TrainingTab({ refreshKey }) {
       )}
 
       {viewMode === "lista" && !stats ? (
-        <Card className="p-8 text-center text-sm" style={{ color: C.muted }}>
-          A carregar atividades…
-        </Card>
+        <Skeleton lines={4} />
       ) : (
         <>
           <PlannedCard planned={planned} openGuide={openGuide} setOpenGuide={setOpenGuide} />
@@ -554,7 +552,7 @@ export default function TrainingTab({ refreshKey }) {
             />
             <StatCard
               label="Gasto total"
-              value={stats.kcal.toLocaleString("pt-BR")}
+              value={stats.kcal.toLocaleString("pt-PT")}
               unit="kcal"
               delta={stats.kcalDelta}
               deltaLabel="vs. período anterior"
@@ -606,8 +604,24 @@ export default function TrainingTab({ refreshKey }) {
                   <XAxis dataKey="label" {...axisProps} minTickGap={8} />
                   <YAxis {...axisProps} />
                   <Tooltip
-                    contentStyle={tooltipStyle}
-                    formatter={(v) => [`${v} km`, "corrida"]}
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const d = payload[0].payload;
+                      const idx = chart.data.indexOf(d);
+                      const prev = idx > 0 ? chart.data[idx - 1] : null;
+                      const delta = prev ? +(d.km - prev.km).toFixed(1) : null;
+                      return (
+                        <div className="rounded-lg p-2 text-xs" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                          <div style={{ color: C.text }}>{d.label}</div>
+                          <div style={{ color: C.teal }}>{d.km} km</div>
+                          {prev && (
+                            <div style={{ color: delta > 0 ? C.green : delta < 0 ? C.red : C.muted }}>
+                              {delta > 0 ? "+" : ""}{delta} vs. {prev.label}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }}
                   />
                   <Bar dataKey="km" radius={[4, 4, 0, 0]}>
                     {chart.data.map((d, i) => (

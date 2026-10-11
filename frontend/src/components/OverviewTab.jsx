@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Card, Ring, StatCard } from "./ui.jsx";
+import { Card, Ring, StatCard, Skeleton } from "./ui.jsx";
 import { C, axisProps, tooltipStyle, fmtTime } from "../theme.js";
 import { api } from "../lib/api.js";
 import { addDays, dateKey, dayMonth } from "../lib/garmin.js";
@@ -141,9 +141,10 @@ export default function OverviewTab({ meals, refreshKey }) {
   return (
     <div className="space-y-6">
       {daily === null ? (
-        <Card className="p-8 text-center text-sm" style={{ color: C.muted }}>
-          A carregar dados do Supabase… (se não aparecer, verifique VITE_SUPABASE_URL/ANON_KEY)
-        </Card>
+        <>
+          <Skeleton />
+          <Skeleton lines={2} />
+        </>
       ) : !last ? (
         <Card className="p-8 text-center text-sm" style={{ color: C.muted }}>
           Sem dados diários no Supabase — corra o import do snapshot.
@@ -448,7 +449,7 @@ function HydrationCard({ refreshKey }) {
           Hidratação · {dayMonth(today)}
         </h3>
         <span className="text-xs" style={{ color: C.muted }}>
-          {(ml ?? 0).toLocaleString("pt-BR")} / {WATER_GOAL.toLocaleString("pt-BR")} ml
+          {(ml ?? 0).toLocaleString("pt-PT")} / {WATER_GOAL.toLocaleString("pt-PT")} ml
         </span>
       </div>
       <div

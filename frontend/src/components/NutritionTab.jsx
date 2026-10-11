@@ -673,11 +673,11 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
         <p className="mt-4 text-center text-xs" style={{ color: C.muted }}>
           Balanço de hoje (ingeridas − ativas):{" "}
           <span style={{ color: todayTotals.kcal - (burnedToday || 0) < 0 ? C.green : C.red }}>
-            {(todayTotals.kcal - (burnedToday || 0)).toLocaleString("pt-BR")} kcal
+            {(todayTotals.kcal - (burnedToday || 0)).toLocaleString("pt-PT")} kcal
           </span>{" "}
           · vs. meta {goals.kcal}:{" "}
           <span style={{ color: todayTotals.kcal <= goals.kcal ? C.green : C.orange }}>
-            {(todayTotals.kcal - goals.kcal >= 0 ? "+" : "") + (todayTotals.kcal - goals.kcal).toLocaleString("pt-BR")}
+            {(todayTotals.kcal - goals.kcal >= 0 ? "+" : "") + (todayTotals.kcal - goals.kcal).toLocaleString("pt-PT")}
           </span>
         </p>
       </Card>
@@ -754,14 +754,14 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
                   return (
                     <div className="rounded-lg p-2 text-xs" style={{ background: C.card, border: `1px solid ${C.border}` }}>
                       <div className="mb-1 font-semibold" style={{ color: C.text }}>{d.label}</div>
-                      <div style={{ color: C.teal }}>Ingeridas: {d.in.toLocaleString("pt-BR")} kcal</div>
-                      <div style={{ color: C.orange }}>Ativas: {d.out.toLocaleString("pt-BR")} kcal</div>
+                      <div style={{ color: C.teal }}>Ingeridas: {d.in.toLocaleString("pt-PT")} kcal</div>
+                      <div style={{ color: C.orange }}>Ativas: {d.out.toLocaleString("pt-PT")} kcal</div>
                       {d.workout > 0 && (
                         <div style={{ color: C.muted }}>
-                          treino: {d.workout.toLocaleString("pt-BR")} kcal (já incl. nas ativas)
+                          treino: {d.workout.toLocaleString("pt-PT")} kcal (já incl. nas ativas)
                         </div>
                       )}
-                      <div style={{ color: C.purple }}>Líquido: {d.net.toLocaleString("pt-BR")} kcal</div>
+                      <div style={{ color: C.purple }}>Líquido: {d.net.toLocaleString("pt-PT")} kcal</div>
                     </div>
                   );
                 }}
@@ -809,7 +809,7 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
                     {fmtDate(g.date)}
                   </span>
                   <span className="text-xs" style={{ color: C.muted }}>
-                    {dayKcal.toLocaleString("pt-BR")} kcal · {g.meals.length} refeiç{g.meals.length === 1 ? "ão" : "ões"}
+                    {dayKcal.toLocaleString("pt-PT")} kcal · {g.meals.length} refeiç{g.meals.length === 1 ? "ão" : "ões"}
                   </span>
                 </button>
                 {open && g.meals.map((m) => {

@@ -29,7 +29,7 @@ export const fmtDate = (iso) => {
 };
 
 export const fmtKcal = (kcal) =>
-  kcal ? Math.round(kcal).toLocaleString("pt-BR") : "—";
+  kcal ? Math.round(kcal).toLocaleString("pt-PT") : "—";
 
 export const dateKey = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(

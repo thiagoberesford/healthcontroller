@@ -154,9 +154,10 @@ export default function App() {
       )}
       {tab === "shoes" && <ShoesTab refreshKey={refreshKey} />}
 
-      <footer className="mt-10 pb-6 text-center text-xs" style={{ color: C.muted }}>
-        Dados Garmin no Supabase (acesso com login) · refeições no navegador/backend local · Suunto na Fase 3
-        <span className="ml-2 opacity-50">· build 2026-10-11a</span>
+      <footer className="mt-10 pb-24 text-center text-xs sm:pb-6" style={{ color: C.muted }}>
+        Treinos: arquivo Garmin (7 anos) + Suunto em direto · nutrição com LLM · plano Treinus ·
+        balança Xiaomi BLE — tudo no Supabase (login)
+        <span className="ml-2 opacity-50">· build 2026-10-11b</span>
       </footer>
 
       {SUPABASE_ENABLED && user && <CoachChat />}
