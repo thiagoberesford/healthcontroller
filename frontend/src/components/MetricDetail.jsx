@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { C, axisProps, tooltipStyle } from "../theme.js";
+import { C, axisProps, tooltipStyle, tickInterval } from "../theme.js";
 import { api } from "../lib/api.js";
 import { addDays, dateKey, dayMonth } from "../lib/garmin.js";
 
@@ -276,7 +276,7 @@ export default function MetricDetail({ metric, onClose }) {
           <ResponsiveContainer width="100%" height={320}>
             <LineChart data={combined}>
               <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-              <XAxis dataKey="label" {...axisProps} />
+              <XAxis dataKey="label" {...axisProps} interval={tickInterval(combined.length)} />
               <YAxis yAxisId="l" {...axisProps} stroke={metric.color} />
               <YAxis yAxisId="r" orientation="right" {...axisProps} stroke={cmp.color} />
               <Tooltip contentStyle={tooltipStyle} />
@@ -294,7 +294,7 @@ export default function MetricDetail({ metric, onClose }) {
                 </linearGradient>
               </defs>
               <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-              <XAxis dataKey="label" {...axisProps} />
+              <XAxis dataKey="label" {...axisProps} interval={tickInterval(series.length)} />
               <YAxis {...axisProps} />
               <Tooltip contentStyle={tooltipStyle} />
               {metric.key === "hrv" && stats && (

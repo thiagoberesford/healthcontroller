@@ -31,6 +31,13 @@ export const axisProps = {
   },
 };
 
+/* E4: para séries longas, ~5 etiquetas no eixo X em mobile (<640px);
+   desktop mantém o auto-thinning do Recharts (preserveEnd). */
+export const tickInterval = (n) => {
+  if (typeof window === "undefined" || window.innerWidth >= 640) return "preserveEnd";
+  return Math.max(1, Math.ceil((n || 1) / 5) - 1);
+};
+
 export const tooltipStyle = {
   get background() { return C.card2; },
   get border() { return `1px solid ${C.border}`; },

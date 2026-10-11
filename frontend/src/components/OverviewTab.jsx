@@ -13,7 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { Card, Ring, StatCard, Skeleton } from "./ui.jsx";
-import { C, axisProps, tooltipStyle, fmtTime } from "../theme.js";
+import { C, axisProps, tooltipStyle, fmtTime, tickInterval } from "../theme.js";
 import { api } from "../lib/api.js";
 import { addDays, dateKey, dayMonth } from "../lib/garmin.js";
 import MetricDetail from "./MetricDetail.jsx";
@@ -253,7 +253,7 @@ export default function OverviewTab({ meals, refreshKey }) {
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={tload.map((r) => ({ ...r, label: dayMonth(r.date) }))}>
               <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-              <XAxis dataKey="label" {...axisProps} minTickGap={32} />
+              <XAxis dataKey="label" {...axisProps} interval={tickInterval(tload.length)} minTickGap={32} />
               <YAxis {...axisProps} />
               <Tooltip contentStyle={tooltipStyle} labelFormatter={(_, p) => p?.[0]?.payload?.date || _} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
