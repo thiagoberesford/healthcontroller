@@ -617,6 +617,55 @@ export const api = {
     }
   },
 
+  /* Camada analítica (calculada no sync; o frontend só lê). */
+  async listTrainingLoad(start, end) {
+    const sb = supabase();
+    if (!sb) return [];
+    try {
+      let q = sb.from("training_load").select("*").order("date", { ascending: true });
+      if (start) q = q.gte("date", start);
+      if (end) q = q.lte("date", end);
+      const { data, error } = await q;
+      if (error) return [];
+      return data || [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  /* RPE/feeling pós-treino (tabela separada; nunca toca o arquivo garmin). */
+  async getActivityNote(source, sourceKey) {
+    const sb = supabase();
+    if (!sb || !sourceKey) return null;
+    try {
+      const { data, error } = await sb
+        .from("activity_notes")
+        .select("rpe,feeling")
+        .eq("source", source)
+        .eq("source_key", sourceKey)
+        .maybeSingle();
+      if (error) return null;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async setActivityNote(source, sourceKey, { rpe, feeling }) {
+    const sb = supabase();
+    if (!sb || !sourceKey) return false;
+    try {
+      const { error } = await sb
+        .from("activity_notes")
+        .upsert({ source, source_key: sourceKey, rpe, feeling }, {
+          onConflict: "source,source_key",
+        });
+      return !error;
+    } catch (e) {
+      return false;
+    }
+  },
+
   async listPlannedWorkouts() {
     const sb = supabase();
     if (!sb) return [];

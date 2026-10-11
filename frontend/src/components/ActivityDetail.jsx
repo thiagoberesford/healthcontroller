@@ -67,6 +67,7 @@ export default function ActivityDetail({ activity, onClose }) {
   const [detail, setDetail] = useState(null);
   const [shoes, setShoes] = useState([]);
   const [shoe, setShoe] = useState("");
+  const [note, setNote] = useState({ rpe: null, feeling: "" });
 
   useEffect(() => {
     let alive = true;
@@ -82,10 +83,19 @@ export default function ActivityDetail({ activity, onClose }) {
       const mine = asg.find((x) => x.source === activity.source && x.source_key === activity.source_key);
       setShoe(mine?.shoe_id || "");
     });
+    api.getActivityNote(activity.source, activity.source_key).then((n) => {
+      if (alive && n) setNote({ rpe: n.rpe ?? null, feeling: n.feeling || "" });
+    });
     return () => {
       alive = false;
     };
   }, [activity]);
+
+  const saveNote = async (patch) => {
+    const next = { ...note, ...patch };
+    setNote(next);
+    await api.setActivityNote(activity.source, activity.source_key, next);
+  };
 
   const changeShoe = async (shoeId) => {
     setShoe(shoeId);
@@ -383,6 +393,32 @@ export default function ActivityDetail({ activity, onClose }) {
             </span>
           </div>
         )}
+
+        {/* RPE / feeling pós-treino (à Suunto Feeling) */}
+        <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl p-3" style={{ background: C.card2, border: `1px solid ${C.border}` }}>
+          <span className="text-xs font-semibold" style={{ color: C.text }}>
+            Esforço (RPE 1-10):
+          </span>
+          <select
+            className="rounded-lg px-2 py-1 text-xs outline-none"
+            value={note.rpe ?? ""}
+            onChange={(e) => saveNote({ rpe: e.target.value ? +e.target.value : null })}
+            style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text }}
+          >
+            <option value="">—</option>
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+          <input
+            className="min-w-40 flex-1 rounded-lg px-2 py-1 text-xs outline-none"
+            placeholder="Como te sentiste no treino? (opcional)"
+            value={note.feeling}
+            onChange={(e) => setNote({ ...note, feeling: e.target.value })}
+            onBlur={(e) => saveNote({ feeling: e.target.value })}
+            style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text }}
+          />
+        </div>
 
         {detail === null ? (
           <p className="py-8 text-center text-sm" style={{ color: C.muted }}>

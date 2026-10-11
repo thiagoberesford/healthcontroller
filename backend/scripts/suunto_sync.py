@@ -152,6 +152,8 @@ def map_workout(w: dict) -> dict | None:
     hrdata = w.get("hrdata") or {}
     hr = hrdata.get("avg") or hrdata.get("workoutAvgHR") or w.get("hrAvg")
     wtype = TYPE_MAP.get(raw_type, "other")
+    # TSS oficial do Suunto (método HR)
+    tss = (w.get("tss") or {}).get("trainingStressScore")
     return {
         "source": "suunto",
         "source_key": str(key),
@@ -162,6 +164,7 @@ def map_workout(w: dict) -> dict | None:
         "duration_s": round(dur) if dur else None,
         "kcal": int(kcal) if kcal else None,
         "avg_hr": int(hr) if hr else None,
+        "tss": round(float(tss), 1) if tss else None,
     }
 
 
@@ -216,16 +219,16 @@ def upsert(conn, workouts: list[dict], daily: list[dict]) -> None:
         cur.executemany(
             """
             insert into public.activities
-                (source, source_key, name, type, start, distance_km, duration_s, kcal, avg_hr)
-            values ('suunto', %s, %s, %s, %s, %s, %s, %s, %s)
+                (source, source_key, name, type, start, distance_km, duration_s, kcal, avg_hr, tss)
+            values ('suunto', %s, %s, %s, %s, %s, %s, %s, %s, %s)
             on conflict (source, source_key) do update set
                 name = excluded.name, type = excluded.type, start = excluded.start,
                 distance_km = excluded.distance_km, duration_s = excluded.duration_s,
-                kcal = excluded.kcal, avg_hr = excluded.avg_hr
+                kcal = excluded.kcal, avg_hr = excluded.avg_hr, tss = excluded.tss
             """,
             [
                 (w["source_key"], w["name"], w["type"], w["start"], w["distance_km"],
-                 w["duration_s"], w["kcal"], w["avg_hr"])
+                 w["duration_s"], w["kcal"], w["avg_hr"], w["tss"])
                 for w in workouts
             ],
         )
@@ -322,6 +325,14 @@ def main() -> None:
             treinus_sync()
         except Exception as ex:
             print(f"  treinus: falhou ({str(ex)[:80]}) — a ignorar")
+        try:
+            # camada analítica: CTL/ATL/TSB, readiness, banda HRV, predições
+            from training_load_sync import main as training_load_main
+            training_load_main()
+        except SystemExit:
+            pass
+        except Exception as ex:
+            print(f"  training_load: falhou ({str(ex)[:80]}) — a ignorar")
         print("SYNC OK")
 
 
