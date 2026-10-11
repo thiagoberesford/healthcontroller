@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import {
   Bar,
   BarChart,
@@ -233,7 +235,9 @@ export default function TrainingTab({ refreshKey }) {
   const [shoes, setShoes] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [showShoeModal, setShowShoeModal] = useState(false);
-  const [viewMode, setViewMode] = useState("lista"); // lista | calendario
+  const [viewMode, setViewMode] = useState("lista"); // lista | calendario | relatorio
+  const [showRoutes, setShowRoutes] = useState(false);
+  const [reportYear, setReportYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     api.listPersonalRecords().then(setPrs);
@@ -455,12 +459,42 @@ export default function TrainingTab({ refreshKey }) {
           >
             Calendário
           </button>
+          <button
+            onClick={() => setShowRoutes(true)}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+            style={{ background: C.card, color: C.muted, border: `1px solid ${C.border}` }}
+          >
+            Mapa de percursos
+          </button>
+          <button
+            onClick={() => setViewMode(viewMode === "relatorio" ? "lista" : "relatorio")}
+            className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+            style={{
+              background: viewMode === "relatorio" ? C.teal : C.card,
+              color: viewMode === "relatorio" ? "#04141a" : C.muted,
+              border: `1px solid ${viewMode === "relatorio" ? C.teal : C.border}`,
+            }}
+          >
+            Relatório
+          </button>
         </div>
       </div>
 
       {viewMode === "calendario" && (
         <CalendarView planned={planned} onOpenActivity={setSelected} />
       )}
+
+      {viewMode === "relatorio" && (
+        <AnnualReport
+          year={reportYear}
+          onYearChange={setReportYear}
+          prs={prs}
+          shoes={shoes}
+          assignments={assignments}
+        />
+      )}
+
+      {showRoutes && <RoutesHeatmap onClose={() => setShowRoutes(false)} />}
 
       {viewMode === "lista" && periodId === "custom" && (
         <div className="flex flex-wrap items-center gap-4">
@@ -801,6 +835,273 @@ function PlannedCard({ planned, openGuide, setOpenGuide }) {
           );
         })}
       </div>
+    </Card>
+  );
+}
+
+/* C2: mapa de percursos — todas as rotas num só mapa, em chunks */
+const isLightTheme = () => document.documentElement.classList.contains("light");
+
+function RoutesHeatmap({ onClose }) {
+  const [period, setPeriod] = useState("90d");
+  const [type, setType] = useState("run");
+  const [progress, setProgress] = useState(null);
+  const mapRef = useRef(null);
+  const layerRef = useRef(null);
+  const divRef = useRef(null);
+
+  useEffect(() => {
+    if (!divRef.current) return;
+    const map = L.map(divRef.current, { preferCanvas: true }).setView([41.55, -8.42], 11);
+    L.tileLayer(
+      isLightTheme()
+        ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
+        : "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+      { attribution: "© OpenStreetMap contributors" },
+    ).addTo(map);
+    mapRef.current = map;
+    layerRef.current = L.layerGroup().addTo(map);
+    return () => map.remove();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const g = layerRef.current;
+      if (!g) return;
+      g.clearLayers();
+      setProgress({ done: 0, total: 0 });
+      const today = dateKey(new Date());
+      const days = period === "30d" ? 30 : period === "90d" ? 90 : period === "year" ? 365 : null;
+      const start = days ? addDays(today, -(days - 1)) : "2019-06-26";
+      const acts = await api.listGarminActivities(start, today);
+      const sel = acts.filter((a) =>
+        type === "run" ? RUN_TYPES.has(a.type) : type === "walk" ? a.type === "walking" : true,
+      );
+      const keys = sel.map((a) => [a.source, a.source_key]);
+      setProgress({ done: 0, total: keys.length });
+      let done = 0;
+      for (let i = 0; i < keys.length; i += 40) {
+        if (cancelled) return;
+        const rows = await api.listPolylines(keys.slice(i, i + 40));
+        for (const r of rows) {
+          if (r.polyline?.length > 1) {
+            L.polyline(r.polyline, { color: C.teal, weight: 2, opacity: 0.25 }).addTo(g);
+          }
+        }
+        done += Math.min(40, keys.length - i);
+        setProgress({ done, total: keys.length });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [period, type]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto p-4"
+      style={{ background: "rgba(5,8,12,.6)" }}
+      onClick={onClose}
+    >
+      <div
+        className="mx-auto max-w-4xl rounded-2xl p-4"
+        style={{ background: C.card, border: `1px solid ${C.border}` }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold" style={{ color: C.text }}>
+            Mapa de percursos
+          </h3>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[["30d", "30d"], ["90d", "90d"], ["year", "1 ano"], ["all", "Tudo"]].map(([id, l]) => (
+              <button
+                key={id}
+                onClick={() => setPeriod(id)}
+                className="rounded-lg px-2.5 py-1 text-xs font-semibold"
+                style={{
+                  background: period === id ? C.teal : C.card2,
+                  color: period === id ? "#04141a" : C.muted,
+                  border: `1px solid ${period === id ? C.teal : C.border}`,
+                }}
+              >
+                {l}
+              </button>
+            ))}
+            {[
+              ["run", "Corridas"],
+              ["walk", "Caminhadas"],
+              ["all", "Tudo"],
+            ].map(([id, l]) => (
+              <button
+                key={id}
+                onClick={() => setType(id)}
+                className="rounded-lg px-2.5 py-1 text-xs font-semibold"
+                style={{
+                  background: type === id ? C.blue : C.card2,
+                  color: type === id ? "#04141a" : C.muted,
+                  border: `1px solid ${type === id ? C.blue : C.border}`,
+                }}
+              >
+                {l}
+              </button>
+            ))}
+            <button
+              onClick={onClose}
+              className="ml-1 rounded-lg px-3 py-1 text-xs font-semibold"
+              style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.muted }}
+            >
+              fechar
+            </button>
+          </div>
+        </div>
+        {progress && progress.done < progress.total && (
+          <p className="mb-2 text-xs" style={{ color: C.muted }}>
+            a carregar rotas… {progress.done}/{progress.total}
+          </p>
+        )}
+        <div ref={divRef} style={{ height: 460, borderRadius: 12, overflow: "hidden" }} />
+      </div>
+    </div>
+  );
+}
+
+/* C3: relatório anual */
+function AnnualReport({ year, onYearChange, prs, shoes, assignments }) {
+  const [acts, setActs] = useState(null);
+  useEffect(() => {
+    api.listGarminActivities(`${year}-01-01`, `${year}-12-31`).then(setActs);
+  }, [year]);
+
+  const r = useMemo(() => {
+    if (!acts) return null;
+    const runs = acts.filter((a) => RUN_TYPES.has(a.type));
+    const km = +acts.reduce((s, a) => s + (a.distance_km || 0), 0).toFixed(1);
+    const time = acts.reduce((s, a) => s + (a.duration_s || 0), 0);
+    const kcal = Math.round(acts.reduce((s, a) => s + (a.kcal || 0), 0));
+    // consistência: semanas com >=3 treinos
+    const weeks = {};
+    for (const a of acts) {
+      const d = new Date(String(a.start).slice(0, 10));
+      const wk = `${d.getFullYear()}-W${String(Math.ceil((d.getDate() + ((d.getDay() + 6) % 7)) / 7)).padStart(2, "0")}`;
+      weeks[wk] = (weeks[wk] || 0) + 1;
+    }
+    const consistentWeeks = Object.values(weeks).filter((n) => n >= 3).length;
+    // volume mensal
+    const monthly = Array.from({ length: 12 }, (_, m) => ({
+      label: ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"][m],
+      km: +acts
+        .filter((a) => +String(a.start).slice(5, 7) - 1 === m && RUN_TYPES.has(a.type))
+        .reduce((s, a) => s + (a.distance_km || 0), 0)
+        .toFixed(1),
+    }));
+    // km por sapatilha
+    const kmByShoe = {};
+    for (const a of runs) {
+      const m = (assignments || []).find((x) => x.source === a.source && x.source_key === a.source_key);
+      if (m) kmByShoe[m.shoe_id] = (kmByShoe[m.shoe_id] || 0) + (a.distance_km || 0);
+    }
+    const shoeRows = (shoes || [])
+      .map((s) => ({ name: s.name, km: +(kmByShoe[s.id] || 0).toFixed(1) }))
+      .filter((x) => x.km > 0)
+      .sort((a, b) => b.km - a.km);
+    // melhores momentos
+    const longest = [...runs].sort((a, b) => (b.distance_km || 0) - (a.distance_km || 0))[0];
+    const biggest = [...acts].sort((a, b) => (b.tss || 0) - (a.tss || 0))[0];
+    const fastest = runs
+      .filter((a) => a.distance_km >= 3)
+      .sort((a, b) => a.duration_s / a.distance_km - b.duration_s / b.distance_km)[0];
+    const moments = [];
+    if (longest) moments.push(`Maior distância: ${longest.distance_km} km (${fmtDate(longest.start)})`);
+    if (fastest)
+      moments.push(
+        `Ritmo mais rápido: ${Math.floor(fastest.duration_s / fastest.distance_km / 60)}:${String(
+          Math.round((fastest.duration_s / fastest.distance_km) % 60),
+        ).padStart(2, "0")} /km (${fmtDate(fastest.start)})`,
+      );
+    if (biggest) moments.push(`Maior carga: ${Math.round(biggest.tss || 0)} TSS (${fmtDate(biggest.start)})`);
+    return { km, time, kcal, sessions: acts.length, consistentWeeks, monthly, shoeRows, moments };
+  }, [acts, assignments, shoes]);
+
+  const yearPrs = (prs || []).filter((p) => String(p.date).startsWith(String(year)));
+
+  return (
+    <Card className="p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <button
+          onClick={() => onYearChange(year - 1)}
+          className="rounded-lg px-3 py-1.5 text-sm font-semibold"
+          style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.muted }}
+        >
+          ‹
+        </button>
+        <h3 className="text-sm font-semibold" style={{ color: C.text }}>
+          Relatório {year}
+        </h3>
+        <button
+          onClick={() => onYearChange(year + 1)}
+          className="rounded-lg px-3 py-1.5 text-sm font-semibold"
+          style={{ background: C.card2, border: `1px solid ${C.border}`, color: C.muted }}
+        >
+          ›
+        </button>
+      </div>
+
+      {!r ? (
+        <p className="text-sm" style={{ color: C.muted }}>A carregar…</p>
+      ) : (
+        <>
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard label="Distância" value={r.km.toLocaleString("pt-PT")} unit="km" color={C.teal} />
+            <StatCard label="Sessões" value={r.sessions} unit="" color={C.blue} />
+            <StatCard label="Tempo" value={fmtTime(r.time)} unit="" color={C.orange} />
+            <StatCard label="Consistência" value={r.consistentWeeks} unit="sem ≥3" color={C.green} />
+          </div>
+
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={r.monthly}>
+              <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
+              <XAxis dataKey="label" {...axisProps} />
+              <YAxis {...axisProps} unit=" km" />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Bar dataKey="km" fill={C.teal} radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+
+          {r.shoeRows.length > 0 && (
+            <div className="mt-4">
+              <h4 className="mb-2 text-xs font-semibold" style={{ color: C.text }}>Km por sapatilha</h4>
+              {r.shoeRows.map((s) => (
+                <div key={s.name} className="flex justify-between py-1 text-sm" style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <span style={{ color: C.text }}>{s.name}</span>
+                  <span style={{ color: C.muted }}>{s.km} km</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {yearPrs.length > 0 && (
+            <div className="mt-4">
+              <h4 className="mb-2 text-xs font-semibold" style={{ color: C.text }}>Recordes do ano</h4>
+              {yearPrs.map((p) => (
+                <div key={p.label} className="flex justify-between py-1 text-sm" style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <span style={{ color: C.text }}>{p.label}</span>
+                  <span style={{ color: C.teal }}>{fmtRecord(p.label, p.value_s)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {r.moments.length > 0 && (
+            <div className="mt-4 rounded-xl p-3" style={{ background: C.card2, border: `1px solid ${C.border}` }}>
+              <h4 className="mb-1 text-xs font-semibold" style={{ color: C.text }}>Melhores momentos</h4>
+              {r.moments.map((m, i) => (
+                <p key={i} className="text-xs" style={{ color: C.muted }}>{m}</p>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </Card>
   );
 }

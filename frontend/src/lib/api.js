@@ -739,6 +739,26 @@ export const api = {
     }
   },
 
+  /* C2: polylines em chunks (mapa de percursos) */
+  async listPolylines(keys) {
+    const sb = supabase();
+    if (!sb || !keys?.length) return [];
+    try {
+      const out = [];
+      for (let i = 0; i < keys.length; i += 40) {
+        const chunk = keys.slice(i, i + 40);
+        const { data, error } = await sb
+          .from("activity_details")
+          .select("source,source_key,data->polyline")
+          .or(chunk.map((k) => `and(source.eq.${k[0]},source_key.eq.${k[1]})`).join(","));
+        if (!error && data) out.push(...data.map((r) => ({ key: r.source_key, polyline: r.polyline || [] })));
+      }
+      return out;
+    } catch (e) {
+      return [];
+    }
+  },
+
   async listPlannedWorkouts() {
     const sb = supabase();
     if (!sb) return [];
