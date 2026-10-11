@@ -253,9 +253,9 @@ export default function OverviewTab({ meals, refreshKey }) {
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={tload.map((r) => ({ ...r, label: dayMonth(r.date) }))}>
               <CartesianGrid stroke={C.border} strokeDasharray="3 3" />
-              <XAxis dataKey="label" {...axisProps} />
+              <XAxis dataKey="label" {...axisProps} minTickGap={32} />
               <YAxis {...axisProps} />
-              <Tooltip contentStyle={tooltipStyle} />
+              <Tooltip contentStyle={tooltipStyle} labelFormatter={(_, p) => p?.[0]?.payload?.date || _} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <ReferenceLine y={0} stroke={C.muted} strokeDasharray="2 2" />
               <Line type="monotone" dataKey="ctl" stroke={C.green} strokeWidth={2} dot={false} name="CTL (forma)" />

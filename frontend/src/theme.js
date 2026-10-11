@@ -23,8 +23,12 @@ export const C = {
 export const axisProps = {
   get stroke() { return C.muted; },
   fontSize: 11,
-  /* E4: menos ticks no eixo X em mobile (<640px) */
-  get interval() { return typeof window !== "undefined" && window.innerWidth < 640 ? 1 : 0; },
+  /* E4: menos ticks no eixo X em mobile (<640px); desktop mantém o
+     auto-thinning do Recharts (preserveEnd) — interval=0 forçava todos */
+  get interval() {
+    if (typeof window === "undefined") return "preserveEnd";
+    return window.innerWidth < 640 ? 2 : "preserveEnd";
+  },
 };
 
 export const tooltipStyle = {
