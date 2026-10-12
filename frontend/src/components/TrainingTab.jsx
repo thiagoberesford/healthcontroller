@@ -250,7 +250,7 @@ function SideCalendar({ planned, onOpenActivity }) {
   const monthLabel = `${MONTHS[first.getMonth()].slice(0, 3).toUpperCase()} ${first.getFullYear()}`;
 
   return (
-    <Card className="h-fit p-4">
+    <Card className="flex h-full flex-col p-4">
       <div className="mb-3 flex items-center justify-between">
         <button
           onClick={() => setMonthOffset((m) => m - 1)}
@@ -286,9 +286,9 @@ function SideCalendar({ planned, onOpenActivity }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-1.5 text-center">
+      <div className="grid flex-1 grid-cols-7 content-center gap-2.5 text-center">
         {WEEKDAYS.map((w) => (
-          <div key={w} className="pb-0.5 text-[10px] font-semibold" style={{ color: C.muted }}>
+          <div key={w} className="pb-0.5 text-[11px] font-semibold" style={{ color: C.muted }}>
             {w.slice(0, 3)}
           </div>
         ))}
@@ -312,7 +312,7 @@ function SideCalendar({ planned, onOpenActivity }) {
             <button
               key={iso}
               onClick={() => (dayActs.length || plan) && setDayModal(iso)}
-              className="mx-auto flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold transition-transform hover:scale-105"
+              className="mx-auto flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition-transform hover:scale-105"
               style={{
                 background: bg,
                 border: `1.5px solid ${isToday ? C.text : border}`,
@@ -325,7 +325,7 @@ function SideCalendar({ planned, onOpenActivity }) {
         })}
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[10px]" style={{ color: C.muted }}>
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px]" style={{ color: C.muted }}>
         <span><span style={{ color: C.orange }}>●</span> treino feito</span>
         <span><span style={{ color: C.teal }}>○</span> planeado</span>
         <span><span style={{ color: C.green }}>●</span> plano cumprido</span>
