@@ -99,7 +99,7 @@ def process_queue() -> int:
                 "order by payload->>'workout', id limit 10"
             )
             gym_rows = cur.fetchall()
-        if not rows:
+        if not rows and not gym_rows:
             return 0
         icon = get_icon()
         n = 0
