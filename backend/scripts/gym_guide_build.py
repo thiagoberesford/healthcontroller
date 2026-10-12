@@ -23,9 +23,9 @@ SCRIPTS = Path(__file__).resolve().parent
 PLAN_PATH = SCRIPTS.parent / "data" / "gym_plan.json"
 OUT_DIR = SCRIPTS.parent / "data" / "gym_guides"
 
-# mesmos modos desportivos das guias Treinus (a lista gym não é observável
-# na conta; ajustar aqui quando houver o 1º treino de ginásio registado)
-ACTIVITIES = [1, 22, 0, 83, 92, 11, 80, 53]
+# modos desportivos onde a guia aparece: Gym (23) e Strength training (76)
+# (mapeamento activityId do HA-Suunto); as corridas ficam nas guias Treinus
+ACTIVITIES = [23, 76]
 
 
 def _notif(text: str) -> dict:
