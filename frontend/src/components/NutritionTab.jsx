@@ -73,7 +73,20 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
   }, [query, foods]);
 
   const addPending = (f) => {
-    setPending((p) => [...p, { food: f, grams: f.portion || 100 }]);
+    setPending((p) => [
+      ...p,
+      {
+        label: f.brand && f.brand !== "Meu registo" ? `${f.name} (${f.brand})` : f.name,
+        grams: f.portion || 100,
+        unit: "g",
+        kcal100: f.kcal,
+        p100: f.protein,
+        c100: f.carbs,
+        f100: f.fat,
+        badge: null,
+        estimated: false,
+      },
+    ]);
     setQuery("");
   };
 
@@ -82,16 +95,16 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
     setPending((p) => p.map((x, j) => (j === i ? { ...x, grams: g } : x)));
   };
 
-  const macrosOfItem = (f, g) => ({
-    kcal: Math.round((f.kcal * g) / 100),
-    protein: +((f.protein * g) / 100).toFixed(1),
-    carbs: +((f.carbs * g) / 100).toFixed(1),
-    fat: +((f.fat * g) / 100).toFixed(1),
+  const macrosOfItem = (it) => ({
+    kcal: Math.round((it.kcal100 * it.grams) / 100),
+    protein: +((it.p100 * it.grams) / 100).toFixed(1),
+    carbs: +((it.c100 * it.grams) / 100).toFixed(1),
+    fat: +((it.f100 * it.grams) / 100).toFixed(1),
   });
 
   const pendingTotals = pending.reduce(
     (acc, p) => {
-      const m = macrosOfItem(p.food, p.grams);
+      const m = macrosOfItem(p);
       return {
         kcal: acc.kcal + m.kcal,
         protein: +(acc.protein + m.protein).toFixed(1),
@@ -104,12 +117,11 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
 
   const confirmPending = async () => {
     if (!pending.length) return;
-    const items = pending.map((p) => ({
-      label: p.food.brand && p.food.brand !== "Meu registo" ? `${p.food.name} (${p.food.brand})` : p.food.name,
-      grams: p.grams,
-      ...macrosOfItem(p.food, p.grams),
-    }));
-    const text = items.map((i) => `${i.label} ${i.grams}g`).join(", ");
+    const items = pending.map((p) => {
+      const m = macrosOfItem(p);
+      return { label: p.label, grams: p.grams, unit: p.unit === "unidade" ? "un." : p.unit, ...m };
+    });
+    const text = items.map((i) => `${i.label} ${i.grams}${i.unit || "g"}`).join(", ");
     await api.addMeal(text, items);
     if (addMeal) addMeal();
     setPending([]);
@@ -146,10 +158,33 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
     setPreview(await api.parseMeal(input));
   };
 
-  const confirm = async () => {
+  /* unificador: os itens analisados juntam-se ao rascunho da refeição
+     (a mesma lista do "Adicionar alimentos") — uma só confirmação no fim */
+  const addPreviewToPending = () => {
     if (!preview || !preview.items.length) return;
-    await api.addMeal(input, preview.items);
-    if (addMeal) addMeal();
+    const per100 = (v, grams) =>
+      typeof v === "number" ? v : grams > 0 ? ((v || 0) / grams) * 100 : 0;
+    setPending((p) => [
+      ...p,
+      ...preview.items.map((it) => {
+        const grams = it.grams || it.quantity || 100;
+        return {
+          label: it.label,
+          grams,
+          unit: it.unit === "unidade" ? "unidade" : it.unit || "g",
+          kcal100: Math.round(per100(it.kcal_100 ?? it.kcal, grams)),
+          p100: +per100(it.protein_100 ?? it.protein, grams).toFixed(2),
+          c100: +per100(it.carbs_100 ?? it.carbs, grams).toFixed(2),
+          f100: +per100(it.fat_100 ?? it.fat, grams).toFixed(2),
+          badge:
+            it.origin === "fatsecret" ? "FS"
+            : it.origin === "openfoodfacts" ? "OFF"
+            : null,
+          estimated: !!it.estimated,
+          needsReview: !!it.needs_review,
+        };
+      }),
+    ]);
     setInput("");
     setPreview(null);
   };
@@ -410,14 +445,25 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
           <div className="mt-4 rounded-lg p-3" style={{ background: C.card2, border: `1px solid ${C.border}` }}>
             <div className="space-y-2">
               {pending.map((p, i) => {
-                const m = macrosOfItem(p.food, p.grams);
+                const m = macrosOfItem(p);
                 return (
                   <div key={i} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                    <span style={{ color: C.text }}>
-                      {p.food.name}
-                      {p.food.brand && p.food.brand !== "Meu registo" && (
-                        <span style={{ color: C.muted }}> ({p.food.brand})</span>
+                    <span className="min-w-0" style={{ color: C.text }}>
+                      {p.badge && (
+                        <span
+                          title={p.badge === "FS" ? "valores reais do FatSecret" : "valores reais do Open Food Facts"}
+                          style={{ color: C.green }}
+                        >
+                          {p.badge}{" "}
+                        </span>
                       )}
+                      {p.estimated && (
+                        <span title="estimado pelo LLM — sem produto na base" style={{ color: C.orange }}>≈ </span>
+                      )}
+                      {p.needsReview && (
+                        <span title="unidade ou quantidade incerta — confirma" style={{ color: C.orange }}>⚠ </span>
+                      )}
+                      {p.label}
                     </span>
                     <span className="flex items-center gap-2">
                       <input
@@ -427,6 +473,7 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
                         onChange={(e) => setGrams(i, e.target.value)}
                         style={inputStyle}
                       />
+                      <span className="text-xs" style={{ color: C.muted }}>{p.unit === "unidade" ? "un." : p.unit}</span>
                       <span className="text-xs" style={{ color: C.muted }}>
                         {m.kcal} kcal · P{m.protein} C{m.carbs} G{m.fat}
                       </span>
@@ -638,9 +685,12 @@ export default function NutritionTab({ meals, refreshKey, addMeal, removeMeal })
                     LLM indisponível: {preview.llmError}
                   </p>
                 )}
-                <button onClick={confirm} className="mt-3 w-full rounded-lg py-2 text-sm font-semibold" style={{ background: C.green, color: "#052e12" }}>
-                  Confirmar refeição
+                <button onClick={addPreviewToPending} className="mt-1 w-full rounded-lg py-2 text-sm font-semibold" style={{ background: C.orange, color: "#1a0a02" }}>
+                  Adicionar à refeição ({preview.items.length})
                 </button>
+                <p className="mt-1 text-center text-[11px]" style={{ color: C.muted }}>
+                  Junta-se ao rascunho acima — confirma a refeição completa lá
+                </p>
               </>
             ) : (
               <p className="text-sm" style={{ color: C.muted }}>Nenhum alimento reconhecido. Tenta: "1 iogurte, 1 banana, 2 fatias de pão integral".</p>
