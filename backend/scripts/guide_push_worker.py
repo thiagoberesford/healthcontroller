@@ -30,6 +30,7 @@ load_dotenv()
 DB_URL = os.getenv("SUPABASE_DB_URL", "")
 
 from treinus_guide_fix import build_guide, _suuntool, SUUNTOOL_BIN  # noqa: E402
+from gym_guide_build import build_gym_guide, load_plan  # noqa: E402
 
 ICON_CACHE = Path(__file__).resolve().parent.parent / "data" / "guide_icon.png"
 
@@ -57,10 +58,14 @@ def get_icon() -> bytes | None:
     return None
 
 
-def upload_guide(guide: dict, icon: bytes | None) -> str:
+def upload_guide(guide: dict, icon: bytes | None, match: str = "date") -> str:
+    """match='date': substitui a guia com a mesma localDate (Treinus).
+    match='name': substitui a guia com o mesmo nome (ginásio, sem data)."""
     guides = json.loads(_suuntool("guides", "list", "-f", "json")).get("items") or []
     for g in guides:
-        if g.get("localDate") == guide["localDate"]:
+        same = (g.get("localDate") == guide.get("localDate") if match == "date"
+                else g.get("name") == guide["name"])
+        if same:
             _suuntool("guides", "delete", g["id"], "--yes")
     with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f:
         with zipfile.ZipFile(f, "w") as z:
@@ -83,9 +88,17 @@ def process_queue() -> int:
             # uma linha por data (cliques repetidos criam linhas extra)
             cur.execute(
                 "select distinct on (date) id, date, payload from public.guide_push_queue "
-                "where status = 'pending' order by date, id limit 10"
+                "where status = 'pending' and source = 'treinus' order by date, id limit 10"
             )
             rows = cur.fetchall()
+            # ginásio: uma linha por treino (A/B/C), não por data
+            cur.execute(
+                "select distinct on (payload->>'workout') id, date, payload "
+                "from public.guide_push_queue "
+                "where status = 'pending' and source = 'gym' "
+                "order by payload->>'workout', id limit 10"
+            )
+            gym_rows = cur.fetchall()
         if not rows:
             return 0
         icon = get_icon()
@@ -132,6 +145,31 @@ def process_queue() -> int:
                     cur.execute(
                         "update public.planned_workouts set push_status = 'error' "
                         "where source = 'treinus' and date = %s", (d,))
+                conn.commit()
+        # ginásio ABC: guia estática por treino, substituição por nome
+        for qid, d, payload in gym_rows:
+            try:
+                wk = ((payload or {}).get("workout") or "").upper()
+                guide = build_gym_guide(load_plan(), wk, (payload or {}).get("date"))
+                if not guide:
+                    raise RuntimeError(f"treino de ginásio '{wk}' não existe no plano")
+                gid = upload_guide(guide, icon, match="name")
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "update public.guide_push_queue set status = 'done', "
+                        "processed_at = now(), error = null "
+                        "where source = 'gym' and payload->>'workout' = %s "
+                        "and status = 'pending'", (wk,))
+                conn.commit()
+                print(f"  ginásio {wk}: guia {gid} enviada ('{guide['name']}')")
+                n += 1
+            except Exception as ex:
+                msg = str(ex)[:300]
+                print(f"  ginásio: ERRO {msg}")
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "update public.guide_push_queue set status = 'error', "
+                        "processed_at = now(), error = %s where id = %s", (msg, qid))
                 conn.commit()
         return n
 

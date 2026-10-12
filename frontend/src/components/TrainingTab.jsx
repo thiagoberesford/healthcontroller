@@ -710,7 +710,10 @@ export default function TrainingTab({ refreshKey }) {
       ) : viewMode === "lista" ? (
         <>
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
-            <PlannedCard planned={planned} openGuide={openGuide} setOpenGuide={setOpenGuide} />
+            <div className="min-w-0 space-y-4">
+              <PlannedCard planned={planned} openGuide={openGuide} setOpenGuide={setOpenGuide} />
+              <GymCard refreshKey={refreshKey} />
+            </div>
             <SideCalendar planned={planned} onOpenActivity={setSelected} />
           </div>
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -1026,6 +1029,113 @@ function PlannedCard({ planned, openGuide, setOpenGuide }) {
                       )}
                     </li>
                   ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+/* Ginásio · Plano ABC: guias cronometradas por treino (mesma fila do Treinus) */
+const GYM_PLAN = [
+  { key: "A", title: "Peito/Tríceps/Core", exercises: ["Supino máquina", "Supino inclinado halteres", "Crossover", "Tríceps corda", "Tríceps testa", "Abdominais na máquina", "Prancha"] },
+  { key: "B", title: "Costas/Bíceps", exercises: ["Puxada frontal", "Remada máquina", "Remada baixa", "Pulldown", "Bíceps barra", "Bíceps alterno", "Martelo"] },
+  { key: "C", title: "Pernas/Ombros", exercises: ["Agachamento", "Leg press", "Extensora", "Flexora", "Elevação lateral", "Desenvolvimento máquina", "Abdominal no solo"] },
+];
+
+function GymCard({ refreshKey }) {
+  const [queue, setQueue] = useState({});
+  const [pushing, setPushing] = useState({});
+  const [open, setOpen] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => api.listGymQueue().then((q) => alive && setQueue(q));
+    load();
+    const t = setInterval(load, 30_000); // badge "no relógio" auto-refresh
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [refreshKey]);
+
+  const push = async (key) => {
+    setPushing((s) => ({ ...s, [key]: "pending" }));
+    const ok = await api.pushGymGuide(key);
+    setPushing((s) => ({ ...s, [key]: ok ? "pending" : "error" }));
+  };
+
+  const badge = (w) => {
+    const st = queue[w.key] || pushing[w.key];
+    if (st === "done")
+      return (
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: C.teal, color: "#04141a" }}>
+          no relógio
+        </span>
+      );
+    if (st === "pending")
+      return (
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: C.card, color: C.muted, border: `1px solid ${C.border}` }}>
+          a enviar…
+        </span>
+      );
+    if (st === "error")
+      return (
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: C.red, color: "#fff" }}>
+          erro
+        </span>
+      );
+    return (
+      <button
+        onClick={() => push(w.key)}
+        className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition-colors"
+        style={{ background: C.card, color: C.text, border: `1px solid ${C.border}` }}
+        title="Enviar esta guia para o relógio (worker no Mac, ~5 min)"
+      >
+        → relógio
+      </button>
+    );
+  };
+
+  return (
+    <Card className="p-4">
+      <h3 className="mb-2 text-xs font-semibold" style={{ color: C.text }}>
+        Ginásio · Plano ABC
+      </h3>
+      <div style={{ borderTop: `1px solid ${C.border}` }}>
+        {GYM_PLAN.map((w) => {
+          const isOpen = open === w.key;
+          return (
+            <div key={w.key} style={{ borderBottom: `1px solid ${C.border}` }}>
+              <button
+                onClick={() => setOpen(isOpen ? null : w.key)}
+                className="flex w-full items-center justify-between gap-3 py-2.5 text-left"
+              >
+                <span className="text-sm font-medium" style={{ color: C.text }}>
+                  Treino {w.key} — {w.title}
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs" style={{ color: C.muted }}>~53 min</span>
+                  {badge(w)}
+                </span>
+              </button>
+              {isOpen && (
+                <ul className="space-y-1 pb-3">
+                  {w.exercises.map((ex) => (
+                    <li key={ex} className="flex gap-2 text-xs">
+                      <span style={{ color: C.teal }}>3×</span>
+                      <span style={{ color: C.text }}>{ex}</span>
+                      <span style={{ color: C.muted }}>45s / 75s descanso</span>
+                    </li>
+                  ))}
+                  <li className="flex gap-2 text-xs">
+                    <span style={{ color: C.teal }}>1×</span>
+                    <span style={{ color: C.text }}>Bike</span>
+                    <span style={{ color: C.muted }}>20 min</span>
+                  </li>
                 </ul>
               )}
             </div>

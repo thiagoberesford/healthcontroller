@@ -839,6 +839,42 @@ export const api = {
     }
   },
 
+  /* Ginásio ABC: mesmo fluxo, source='gym' + payload {workout, date?}. */
+  async pushGymGuide(workout, date) {
+    const sb = supabase();
+    if (!sb) return false;
+    try {
+      const payload = date ? { workout, date } : { workout };
+      const today = new Date().toISOString().slice(0, 10);
+      const { error } = await sb.from("guide_push_queue").insert({ source: "gym", date: today, payload });
+      return !error;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  /* Estado do push dos treinos de ginásio: {A: 'done'|'pending'|'error', ...} */
+  async listGymQueue() {
+    const sb = supabase();
+    if (!sb) return {};
+    try {
+      const { data, error } = await sb
+        .from("guide_push_queue")
+        .select("payload,status")
+        .eq("source", "gym")
+        .order("id", { ascending: false });
+      if (error) return {};
+      const out = {};
+      for (const r of data || []) {
+        const w = r.payload?.workout;
+        if (w && !(w in out)) out[w] = r.status; // mais recente primeiro
+      }
+      return out;
+    } catch (e) {
+      return {};
+    }
+  },
+
   /* Coach chat: streaming SSE; onEvent recebe {type:"tools"|"token"|"done"|"error"} */
   async coachChat(question, history, onEvent) {
     const sb = supabase();

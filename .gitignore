@@ -4,7 +4,7 @@ __pycache__/
 .venv/
 venv/
 .env
-backend/data/
+backend/data/* # tudo local, exceto gym_plan.json (exceção em baixo)
 
 # Node
 node_modules/
@@ -20,3 +20,7 @@ dist/
 
 # Supabase CLI
 supabase/.temp/
+
+# gym plan versionado (resto de backend/data/ fica local)
+backend/data/*
+!backend/data/gym_plan.json

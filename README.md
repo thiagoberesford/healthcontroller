@@ -49,6 +49,12 @@ no fundo e modais como bottom sheets), login obrigatório.
   repetições N×, arrefecimento) com contagem decrescente e voltas automáticas
 - Treinos executados seguem a guia no relógio; o site compara plano vs. feito
 
+### Ginásio (plano ABC → relógio)
+- Treinos A/B/C (7 exercícios, 45s trabalho / 75s descanso, bike final) como guias
+  cronometradas — mesmo fluxo aprovado do Treinus: clique "→ relógio" no site →
+  fila → worker → guia "Ginásio A/B/C" no relógio; card com exercícios expandível
+  e plano editável em `backend/data/gym_plan.json`
+
 ### Corpo (balança Xiaomi Mi Body Composition Scale 2)
 - Leitura **Bluetooth direta no Mac** (`scale_listener.py` + LaunchAgent): pisar a balança
   → aparece no site, sem app nem export
