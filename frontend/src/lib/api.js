@@ -853,7 +853,24 @@ export const api = {
     }
   },
 
-  /* Estado do push dos treinos de ginásio: {A: 'done'|'pending'|'error', ...} */
+  /* Ginásio ABC: agenda a rotação A/B/C nos dias escolhidos (guias datadas). */
+  async pushGymSchedule(weekdays, weeks = 4) {
+    const sb = supabase();
+    if (!sb) return false;
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const { error } = await sb.from("guide_push_queue").insert({
+        source: "gym",
+        date: today,
+        payload: { schedule: true, weekdays, weeks },
+      });
+      return !error;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  /* Estado do push dos treinos de ginásio: {A: 'done'|'pending'|'error', ..., SCHEDULE: ...} */
   async listGymQueue() {
     const sb = supabase();
     if (!sb) return {};
@@ -866,7 +883,7 @@ export const api = {
       if (error) return {};
       const out = {};
       for (const r of data || []) {
-        const w = r.payload?.workout;
+        const w = r.payload?.schedule ? "SCHEDULE" : r.payload?.workout;
         if (w && !(w in out)) out[w] = r.status; // mais recente primeiro
       }
       return out;

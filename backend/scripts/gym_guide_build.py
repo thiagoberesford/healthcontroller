@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -85,14 +86,24 @@ def build_gym_guide(plan: dict, key: str, date: str | None = None) -> dict | Non
         return None
     steps = gym_steps(workout, plan.get("defaults") or {},
                       plan.get("final_block") or {}, plan.get("max_steps") or 64)
+    # guia agendada (com data): nome curto com o dia, como as do Treinus;
+    # o título completo segue na primeira notificação da guia
+    if date:
+        d = datetime.strptime(date, "%Y-%m-%d")
+        wd = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"][d.weekday()]
+        name = f"Ginásio {key.upper()} {wd} {d.strftime('%d/%m')}"
+        external_id = f"gym-{key.lower()}-{date}"
+    else:
+        name = f"Ginásio {key.upper()} — {workout['title']}"
+        external_id = f"gym-{key.lower()}"
     guide = {
         "type": "sequence",
-        "name": f"Ginásio {key.upper()} — {workout['title']}",
+        "name": name,
         "description": "Circuito cronometrado do plano ABC (Health Controller)",
         "owner": "Health Controller",
         "activities": ACTIVITIES,
         "usage": "workout",
-        "externalId": f"gym-{key.lower()}",
+        "externalId": external_id,
         "steps": steps,
     }
     if date:

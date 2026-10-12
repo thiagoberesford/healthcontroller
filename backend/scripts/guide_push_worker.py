@@ -16,7 +16,7 @@ import os
 import sys
 import tempfile
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -146,11 +146,38 @@ def process_queue() -> int:
                         "update public.planned_workouts set push_status = 'error' "
                         "where source = 'treinus' and date = %s", (d,))
                 conn.commit()
-        # ginásio ABC: guia estática por treino, substituição por nome
+        # ginásio ABC: guia estática por treino OU rotação agendada com data
         for qid, d, payload in gym_rows:
+            payload = payload or {}
             try:
-                wk = ((payload or {}).get("workout") or "").upper()
-                guide = build_gym_guide(load_plan(), wk, (payload or {}).get("date"))
+                plan = load_plan()
+                if payload.get("schedule"):
+                    # rotação A->B->C nos dias escolhidos, semanas à frente
+                    weekdays = set(payload.get("weekdays") or [0, 2, 4])
+                    weeks = int(payload.get("weeks") or 4)
+                    today = date.today()
+                    dates = [today + timedelta(days=i)
+                             for i in range(weeks * 7 + 1)
+                             if (today + timedelta(days=i)).weekday() in weekdays]
+                    sent = 0
+                    for i, gd in enumerate(dates):
+                        guide = build_gym_guide(plan, "ABC"[i % 3], gd.isoformat())
+                        if guide:
+                            upload_guide(guide, icon, match="name")
+                            sent += 1
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "update public.guide_push_queue set status = 'done', "
+                            "processed_at = now(), error = null "
+                            "where source = 'gym' and payload ? 'schedule' "
+                            "and status = 'pending'")
+                    conn.commit()
+                    print(f"  ginásio: rotação agendada — {sent} guias datadas "
+                          f"({len(dates)} dias de ginásio em {weeks} semanas)")
+                    n += 1
+                    continue
+                wk = (payload.get("workout") or "").upper()
+                guide = build_gym_guide(plan, wk, payload.get("date"))
                 if not guide:
                     raise RuntimeError(f"treino de ginásio '{wk}' não existe no plano")
                 gid = upload_guide(guide, icon, match="name")

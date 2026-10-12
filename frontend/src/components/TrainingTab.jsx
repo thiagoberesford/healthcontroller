@@ -1050,6 +1050,7 @@ function GymCard({ refreshKey }) {
   const [queue, setQueue] = useState({});
   const [pushing, setPushing] = useState({});
   const [open, setOpen] = useState(null);
+  const [days, setDays] = useState([0, 2, 4]); // seg/qua/sex por omissão
 
   useEffect(() => {
     let alive = true;
@@ -1066,6 +1067,45 @@ function GymCard({ refreshKey }) {
     setPushing((s) => ({ ...s, [key]: "pending" }));
     const ok = await api.pushGymGuide(key);
     setPushing((s) => ({ ...s, [key]: ok ? "pending" : "error" }));
+  };
+
+  const pushSchedule = async () => {
+    setPushing((s) => ({ ...s, SCHEDULE: "pending" }));
+    const ok = await api.pushGymSchedule(days);
+    setPushing((s) => ({ ...s, SCHEDULE: ok ? "pending" : "error" }));
+  };
+
+  const scheduleBadge = () => {
+    const st = queue.SCHEDULE || pushing.SCHEDULE;
+    if (st === "done")
+      return (
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: C.teal, color: "#04141a" }}>
+          agendado no relógio
+        </span>
+      );
+    if (st === "pending")
+      return (
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: C.card, color: C.muted, border: `1px solid ${C.border}` }}>
+          a enviar…
+        </span>
+      );
+    if (st === "error")
+      return (
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: C.red, color: "#fff" }}>
+          erro
+        </span>
+      );
+    return (
+      <button
+        onClick={pushSchedule}
+        disabled={!days.length}
+        className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-40"
+        style={{ background: C.card, color: C.text, border: `1px solid ${C.border}` }}
+        title="Criar guias datadas (rotação A→B→C) nos dias escolhidos, 4 semanas"
+      >
+        agendar 4 semanas
+      </button>
+    );
   };
 
   const badge = (w) => {
@@ -1141,6 +1181,29 @@ function GymCard({ refreshKey }) {
             </div>
           );
         })}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-[11px]" style={{ color: C.muted }}>
+          Agendar rotação nos dias:
+        </span>
+        {["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map((lbl, i) => {
+          const on = days.includes(i);
+          return (
+            <button
+              key={lbl}
+              onClick={() => setDays((ds) => (on ? ds.filter((x) => x !== i) : [...ds, i]))}
+              className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition-colors"
+              style={{
+                background: on ? C.teal : C.card,
+                color: on ? "#04141a" : C.muted,
+                border: `1px solid ${on ? C.teal : C.border}`,
+              }}
+            >
+              {lbl}
+            </button>
+          );
+        })}
+        {scheduleBadge()}
       </div>
     </Card>
   );
