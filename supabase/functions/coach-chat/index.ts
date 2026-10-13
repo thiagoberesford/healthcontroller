@@ -366,60 +366,102 @@ const TOOL_RUNNERS: Record<string, (auth: string, args: Record<string, unknown>)
         }
       }
 
-      /* estrutura do treino: aquecimento / intervalos / desaquecimento */
+      /* estrutura do treino: aquecimento / repetições / desaquecimento.
+         Bins de 10s + 2-means (corrida/caminhada) + segmentos — reconhece
+         padrões tipo 3' correr / 1' caminhar × N que o bin de 1 min
+         fragmentava; bins parados (>18:00/km) são descartados */
       let structure_text: string | null = null;
-      const pts = minute_pace.filter((p) => p.pace_sec_per_km);
-      if (pts.length >= 4) {
+      if (cum.length && totalS > 0) {
         const fmtP = (s: number) =>
           `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
-        const paces = pts.map((p) => p.pace_sec_per_km as number).sort((x, y) => x - y);
-        const median = paces[Math.floor(paces.length / 2)];
-        const spread = (paces[paces.length - 1] - paces[0]) / median;
-        if (spread < 0.3) {
-          structure_text = `Treino contínuo — ritmo médio ≈ ${fmtP(median)}/km`;
-        } else {
-          const kinds = pts.map((p) => (p.pace_sec_per_km! < median * 0.95 ? "F" : "S"));
-          const blocks: Array<{ start: number; end: number }> = [];
-          let cur: { start: number; end: number } | null = null;
-          kinds.forEach((k, i) => {
-            if (k === "F") {
-              if (!cur) cur = { start: i, end: i };
-              else cur.end = i;
-            } else if (cur) {
-              blocks.push(cur);
-              cur = null;
-            }
-          });
-          if (cur) blocks.push(cur);
-          if (blocks.length < 2) {
+        const avgOf = (arr: number[]) =>
+          arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0;
+        const BIN = 10;
+        const bins: Array<{ t0: number; t1: number; pace: number; fast?: boolean }> = [];
+        for (let t = 0; t + BIN <= totalS; t += BIN) {
+          const dm = distAt(t + BIN) - distAt(t);
+          const pace = dm > 1.5 ? (1000 / dm) * BIN : null;
+          if (pace && pace < 18 * 60) bins.push({ t0: t, t1: t + BIN, pace });
+        }
+        const paces = bins.map((b) => b.pace).sort((x, y) => x - y);
+        if (paces.length >= 4) {
+          const median = paces[Math.floor(paces.length / 2)];
+          const spread = (paces[paces.length - 1] - paces[0]) / median;
+          if (spread < 0.3) {
             structure_text = `Treino contínuo — ritmo médio ≈ ${fmtP(median)}/km`;
           } else {
-            const fastP: number[] = [];
-            blocks.forEach((b) => {
-              for (let i = b.start; i <= b.end; i++) fastP.push(pts[i].pace_sec_per_km!);
-            });
-            const avg = (arr: number[]) =>
-              arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
-            const lens = blocks.map((b) => b.end - b.start + 1).sort((x, y) => x - y);
-            const typLen = lens[Math.floor(lens.length / 2)];
-            const slowP: number[] = [];
-            for (let i = blocks[0].start; i <= blocks[blocks.length - 1].end; i++) {
-              if (kinds[i] === "S") slowP.push(pts[i].pace_sec_per_km!);
+            let lo = paces[0];
+            let hi = paces[paces.length - 1];
+            for (let it = 0; it < 12; it++) {
+              const mid = (lo + hi) / 2;
+              const a1 = paces.filter((p) => p < mid);
+              const b1 = paces.filter((p) => p >= mid);
+              if (!a1.length || !b1.length) break;
+              const nlo = avgOf(a1);
+              const nhi = avgOf(b1);
+              if (Math.abs(nlo - lo) < 0.5 && Math.abs(nhi - hi) < 0.5) break;
+              lo = nlo;
+              hi = nhi;
             }
-            const wu = pts.slice(0, blocks[0].start);
-            const cd = pts.slice(blocks[blocks.length - 1].end + 1);
-            const parts: string[] = [];
-            if (wu.length >= 2) {
-              parts.push(`Aquecimento ≈ ${wu.length} min a ${fmtP(avg(wu.map((p) => p.pace_sec_per_km!)) as number)}/km`);
+            bins.forEach((b) => (b.fast = b.pace < (lo + hi) / 2));
+            const segs: Array<{ fast: boolean; t0: number; t1: number; paces: number[] }> = [];
+            for (const b of bins) {
+              const last = segs[segs.length - 1];
+              if (last && last.fast === !!b.fast) {
+                last.t1 = b.t1;
+                last.paces.push(b.pace);
+              } else {
+                segs.push({ fast: !!b.fast, t0: b.t0, t1: b.t1, paces: [b.pace] });
+              }
             }
-            parts.push(
-              `${blocks.length} intervalo${blocks.length === 1 ? "" : "s"} de ≈ ${typLen} min a ${fmtP(avg(fastP) as number)}/km` +
-                (slowP.length ? ` (recuperação ≈ ${fmtP(avg(slowP) as number)}/km)` : ""),
-            );
-            if (cd.length >= 2) {
-              parts.push(`Desaquecimento ≈ ${cd.length} min a ${fmtP(avg(cd.map((p) => p.pace_sec_per_km!)) as number)}/km`);
+            const merged: typeof segs = [];
+            for (const s of segs) {
+              const prev = merged[merged.length - 1];
+              if (prev && s.t1 - s.t0 <= BIN) {
+                prev.t1 = s.t1;
+                prev.paces.push(...s.paces);
+              } else {
+                merged.push(s);
+              }
             }
-            structure_text = parts.join(" · ");
+            if (merged.length < 3) {
+              structure_text = `Treino contínuo — ritmo médio ≈ ${fmtP(median)}/km`;
+            } else {
+              let i0 = 0;
+              let i1 = merged.length - 1;
+              const wu = !merged[0].fast && merged[0].t1 - merged[0].t0 >= 90 ? merged[i0++] : null;
+              const cd = !merged[i1].fast && merged[i1].t1 - merged[i1].t0 >= 90 && i1 > i0 ? merged[i1--] : null;
+              const mid = merged.slice(i0, i1 + 1);
+              const fastSegs = mid.filter((s) => s.fast);
+              const slowSegs = mid.filter((s) => !s.fast);
+              if (fastSegs.length < 2) {
+                structure_text = `Treino contínuo — ritmo médio ≈ ${fmtP(median)}/km`;
+              } else {
+                const durOf = (s: { t0: number; t1: number }) => s.t1 - s.t0;
+                const medOf = (arr: number[]) => {
+                  const v = [...arr].sort((x, y) => x - y);
+                  return v[Math.floor(v.length / 2)];
+                };
+                const runLen = Math.round(medOf(fastSegs.map(durOf)) / 10) * 10;
+                const recLen = slowSegs.length ? Math.round(medOf(slowSegs.map(durOf)) / 10) * 10 : null;
+                const runPace = avgOf(fastSegs.flatMap((s) => s.paces));
+                const recPace = slowSegs.length ? avgOf(slowSegs.flatMap((s) => s.paces)) : null;
+                const fmtDur = (s: number) => (s % 60 === 0 ? `${s / 60}'` : `${(s / 60).toFixed(1).replace(".", ",")}'`);
+                const recWord = recPace >= 540 ? "caminhada" : "recuperação"; // >9:00/km
+                const parts: string[] = [];
+                if (wu) {
+                  parts.push(`Aquecimento ≈ ${Math.round(durOf(wu) / 60)} min a ${fmtP(avgOf(wu.paces))}/km`);
+                }
+                parts.push(
+                  `${fastSegs.length} repetições: ${fmtDur(runLen)} a ${fmtP(runPace)}/km` +
+                    (recLen ? ` · ${fmtDur(recLen)} ${recWord} a ${fmtP(recPace as number)}/km` : ""),
+                );
+                if (cd) {
+                  parts.push(`Desaquecimento ≈ ${Math.round(durOf(cd) / 60)} min a ${fmtP(avgOf(cd.paces))}/km`);
+                }
+                structure_text = parts.join(" · ");
+              }
+            }
           }
         }
       }
