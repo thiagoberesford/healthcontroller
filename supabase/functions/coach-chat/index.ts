@@ -457,13 +457,21 @@ const TOOL_RUNNERS: Record<string, (auth: string, args: Record<string, unknown>)
                 // arredondamento a 30s: 190s de corrida é '3'', não '3,2''
                 const runLen = Math.round(medOf(fastSegs.map(durOf)) / 30) * 30;
                 const recLen = slowSegs.length ? Math.round(medOf(slowSegs.map(durOf)) / 30) * 30 : null;
+                /* se as repetições começam com corrida, a 1.ª caminhada da
+                   1.ª repetição está fundida no aquecimento (mesmo ritmo) —
+                   separar: aquecimento = bloco - recuperação típica */
+                const wuAdj =
+                  wu && mid.length && mid[0].fast && slowSegs.length &&
+                  durOf(wu) - medOf(slowSegs.map(durOf)) >= 90
+                    ? { ...wu, t1: wu.t1 - medOf(slowSegs.map(durOf)) }
+                    : wu;
                 const runPace = avgOf(fastSegs.flatMap((s) => s.paces));
                 const recPace = slowSegs.length ? avgOf(slowSegs.flatMap((s) => s.paces)) : null;
                 const fmtDur = (s: number) => (s % 60 === 0 ? `${s / 60}'` : `${(s / 60).toFixed(1).replace(".", ",")}'`);
                 const recWord = recPace >= 540 ? "caminhada" : "recuperação"; // >9:00/km
                 const parts: string[] = [];
-                if (wu) {
-                  parts.push(`Aquecimento ≈ ${Math.round(durOf(wu) / 60)} min a ${fmtP(avgOf(wu.paces))}/km`);
+                if (wuAdj) {
+                  parts.push(`Aquecimento ≈ ${Math.round(durOf(wuAdj) / 60)} min a ${fmtP(avgOf(wuAdj.paces))}/km`);
                 }
                 parts.push(
                   `${fastSegs.length} repetições: ${fmtDur(runLen)} a ${fmtP(runPace)}/km` +

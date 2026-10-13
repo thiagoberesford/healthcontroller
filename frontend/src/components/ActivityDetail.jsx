@@ -317,6 +317,13 @@ export default function ActivityDetail({ activity, onClose }) {
     // arredondamento a 30s: 190s de corrida é '3'', não '3,2''
     const runLen = Math.round(med(fastSegs.map(dur)) / 30) * 30;
     const recLen = slowSegs.length ? Math.round(med(slowSegs.map(dur)) / 30) * 30 : null;
+    /* se as repetições começam com corrida, a 1.ª caminhada da 1.ª
+       repetição está fundida no aquecimento (mesmo ritmo, segmento
+       contíguo) — separar: aquecimento = bloco - recuperação típica */
+    const wuAdj =
+      wu && mid.length && mid[0].fast && slowSegs.length && dur(wu) - med(slowSegs.map(dur)) >= 90
+        ? { ...wu, t1: wu.t1 - med(slowSegs.map(dur)) }
+        : wu;
     const runPace = avg(fastSegs.flatMap((s) => s.paces));
     const recPace = slowSegs.length ? avg(slowSegs.flatMap((s) => s.paces)) : null;
     const fmtDur = (s) => (s % 60 === 0 ? `${s / 60}'` : `${(s / 60).toFixed(1).replace(".", ",")}'`);
@@ -324,19 +331,19 @@ export default function ActivityDetail({ activity, onClose }) {
     const rows = [];
     const midMin = Math.round((mid[mid.length - 1].t1 - mid[0].t0) / 60);
     const totalMin = Math.round(a.duration_s / 60);
-    if (wu) {
+    if (wuAdj) {
       rows.push({
         label: "Aquecimento",
-        min: Math.round(dur(wu) / 60),
-        pct: +((dur(wu) / a.duration_s) * 100).toFixed(1),
-        value: `${Math.round(dur(wu) / 60)} min · ${fmt(avg(wu.paces))}/km`,
+        min: Math.round(dur(wuAdj) / 60),
+        pct: +((dur(wuAdj) / a.duration_s) * 100).toFixed(1),
+        value: `${Math.round(dur(wuAdj) / 60)} min · ${fmt(avg(wuAdj.paces))}/km`,
         color: C.blue,
       });
     }
     rows.push({
       label: `${fastSegs.length} repetições${runLen ? ` · ${fmtDur(runLen)}${recLen ? ` / ${fmtDur(recLen)}` : ""}` : ""}`,
       min: midMin,
-      pct: +((1 - (wu ? dur(wu) : 0) / a.duration_s - (cd ? dur(cd) : 0) / a.duration_s) * 100).toFixed(1),
+      pct: +((1 - (wuAdj ? dur(wuAdj) : 0) / a.duration_s - (cd ? dur(cd) : 0) / a.duration_s) * 100).toFixed(1),
       value: recPace
         ? `corrida ${fmt(runPace)}/km · ${recWord} ${fmt(recPace)}/km`
         : `${fmt(runPace)}/km`,
