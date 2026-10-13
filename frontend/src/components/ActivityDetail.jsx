@@ -284,14 +284,27 @@ export default function ActivityDetail({ activity, onClose }) {
         merged.push(s);
       }
     }
-    if (merged.length < 3) return continuous();
+    // segmentos do mesmo tipo separados só por bins descartados (GPS)
+    // pertencem ao mesmo bloco — ex.: desaquecimento partido em dois
+    const joined = [];
+    for (const s of merged) {
+      const prev = joined[joined.length - 1];
+      if (prev && prev.fast === s.fast && s.t0 - prev.t1 <= 2 * BIN) {
+        prev.t1 = s.t1;
+        prev.paces.push(...s.paces);
+      } else {
+        joined.push(s);
+      }
+    }
+    const blocks = joined;
+    if (blocks.length < 3) return continuous();
 
     // aquecimento/desaquecimento: segmentos lentos >=90s nas pontas
     let i0 = 0;
-    let i1 = merged.length - 1;
-    const wu = !merged[0].fast && merged[0].t1 - merged[0].t0 >= 90 ? merged[i0++] : null;
-    const cd = !merged[i1].fast && merged[i1].t1 - merged[i1].t0 >= 90 && i1 > i0 ? merged[i1--] : null;
-    const mid = merged.slice(i0, i1 + 1);
+    let i1 = blocks.length - 1;
+    const wu = !blocks[0].fast && blocks[0].t1 - blocks[0].t0 >= 90 ? blocks[i0++] : null;
+    const cd = !blocks[i1].fast && blocks[i1].t1 - blocks[i1].t0 >= 90 && i1 > i0 ? blocks[i1--] : null;
+    const mid = blocks.slice(i0, i1 + 1);
     const fastSegs = mid.filter((s) => s.fast);
     const slowSegs = mid.filter((s) => !s.fast);
     if (fastSegs.length < 2) return continuous();
@@ -301,8 +314,9 @@ export default function ActivityDetail({ activity, onClose }) {
       const v = [...arr].sort((x, y) => x - y);
       return v[Math.floor(v.length / 2)];
     };
-    const runLen = Math.round(med(fastSegs.map(dur)) / 10) * 10;
-    const recLen = slowSegs.length ? Math.round(med(slowSegs.map(dur)) / 10) * 10 : null;
+    // arredondamento a 30s: 190s de corrida é '3'', não '3,2''
+    const runLen = Math.round(med(fastSegs.map(dur)) / 30) * 30;
+    const recLen = slowSegs.length ? Math.round(med(slowSegs.map(dur)) / 30) * 30 : null;
     const runPace = avg(fastSegs.flatMap((s) => s.paces));
     const recPace = slowSegs.length ? avg(slowSegs.flatMap((s) => s.paces)) : null;
     const fmtDur = (s) => (s % 60 === 0 ? `${s / 60}'` : `${(s / 60).toFixed(1).replace(".", ",")}'`);
@@ -699,7 +713,7 @@ export default function ActivityDetail({ activity, onClose }) {
                     ))}
                   </div>
                   <p className="mt-2 px-1 text-[10px]" style={{ color: C.muted }}>
-                    heurística sobre o ritmo por minuto — valores aproximados
+                    heurística sobre o ritmo (bins de 10s) — valores aproximados
                   </p>
                 </div>
               )}

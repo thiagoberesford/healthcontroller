@@ -424,14 +424,26 @@ const TOOL_RUNNERS: Record<string, (auth: string, args: Record<string, unknown>)
                 merged.push(s);
               }
             }
-            if (merged.length < 3) {
+            // segmentos do mesmo tipo separados só por bins descartados (GPS)
+            // pertencem ao mesmo bloco — ex.: desaquecimento partido em dois
+            const joined: typeof segs = [];
+            for (const s of merged) {
+              const prev = joined[joined.length - 1];
+              if (prev && prev.fast === s.fast && s.t0 - prev.t1 <= 2 * BIN) {
+                prev.t1 = s.t1;
+                prev.paces.push(...s.paces);
+              } else {
+                joined.push(s);
+              }
+            }
+            if (joined.length < 3) {
               structure_text = `Treino contínuo — ritmo médio ≈ ${fmtP(median)}/km`;
             } else {
               let i0 = 0;
-              let i1 = merged.length - 1;
-              const wu = !merged[0].fast && merged[0].t1 - merged[0].t0 >= 90 ? merged[i0++] : null;
-              const cd = !merged[i1].fast && merged[i1].t1 - merged[i1].t0 >= 90 && i1 > i0 ? merged[i1--] : null;
-              const mid = merged.slice(i0, i1 + 1);
+              let i1 = joined.length - 1;
+              const wu = !joined[0].fast && joined[0].t1 - joined[0].t0 >= 90 ? joined[i0++] : null;
+              const cd = !joined[i1].fast && joined[i1].t1 - joined[i1].t0 >= 90 && i1 > i0 ? joined[i1--] : null;
+              const mid = joined.slice(i0, i1 + 1);
               const fastSegs = mid.filter((s) => s.fast);
               const slowSegs = mid.filter((s) => !s.fast);
               if (fastSegs.length < 2) {
@@ -442,8 +454,9 @@ const TOOL_RUNNERS: Record<string, (auth: string, args: Record<string, unknown>)
                   const v = [...arr].sort((x, y) => x - y);
                   return v[Math.floor(v.length / 2)];
                 };
-                const runLen = Math.round(medOf(fastSegs.map(durOf)) / 10) * 10;
-                const recLen = slowSegs.length ? Math.round(medOf(slowSegs.map(durOf)) / 10) * 10 : null;
+                // arredondamento a 30s: 190s de corrida é '3'', não '3,2''
+                const runLen = Math.round(medOf(fastSegs.map(durOf)) / 30) * 30;
+                const recLen = slowSegs.length ? Math.round(medOf(slowSegs.map(durOf)) / 30) * 30 : null;
                 const runPace = avgOf(fastSegs.flatMap((s) => s.paces));
                 const recPace = slowSegs.length ? avgOf(slowSegs.flatMap((s) => s.paces)) : null;
                 const fmtDur = (s: number) => (s % 60 === 0 ? `${s / 60}'` : `${(s / 60).toFixed(1).replace(".", ",")}'`);
