@@ -83,6 +83,10 @@ def sync_guides(conn, dry_run: bool = False) -> int:
         gid = it.get("id")
         if not gid:
             continue
+        if not it.get("localDate"):
+            # guias estáticas sem data (ex. Ginásio A/B/C): não são treinos
+            # planeados para um dia e partiam o insert (date NOT NULL)
+            continue
         try:
             with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f:
                 tmp = f.name
@@ -98,18 +102,20 @@ def sync_guides(conn, dry_run: bool = False) -> int:
             print(f"  {it.get('localDate')} | {it.get('name')} "
                   f"({len(summary['steps'])} passos, {summary['total_duration_s']:.0f}s)")
             if not dry_run:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        insert into public.planned_workouts (id, date, name, source, data)
-                        values (%s, %s, %s, 'suunto_guide', %s::jsonb)
-                        on conflict (id) do update set
-                          date = excluded.date, name = excluded.name,
-                          data = excluded.data, updated_at = now()
-                        """,
-                        (gid, it.get("localDate"), it.get("name"), json.dumps(summary)),
-                    )
-                conn.commit()
+                # transação própria: um insert falhado não envenena os
+                # restantes nem a transação do chamador
+                with conn.transaction():
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            insert into public.planned_workouts (id, date, name, source, data)
+                            values (%s, %s, %s, 'suunto_guide', %s::jsonb)
+                            on conflict (id) do update set
+                              date = excluded.date, name = excluded.name,
+                              data = excluded.data, updated_at = now()
+                            """,
+                            (gid, it.get("localDate"), it.get("name"), json.dumps(summary)),
+                        )
             done += 1
         except Exception as ex:
             print(f"  ERRO {gid}: {str(ex)[:120]}")

@@ -330,6 +330,9 @@ def main() -> None:
             # detalhes (SML -> activity_details) para os treinos novos
             from suunto_details import sync_details
             sync_details(conn, [w["source_key"] for w in workouts])
+        # commit ANTES das guias/Treinus: uma falha a jusante (ex. guia
+        # sem data) não pode fazer rollback dos dados de hoje
+        conn.commit()
         try:
             # treinos planeados (Treinus via SuuntoPlus Guides = o que está no relógio)
             from suunto_guides_sync import sync_guides
