@@ -141,7 +141,8 @@ def process_queue() -> int:
                 with conn.cursor() as cur:
                     cur.execute(
                         "update public.guide_push_queue set status = 'error', "
-                        "processed_at = now(), error = %s where id = %s", (msg, qid))
+                        "processed_at = now(), error = %s, "
+                        "attempts = attempts + 1 where id = %s", (msg, qid))
                     cur.execute(
                         "update public.planned_workouts set push_status = 'error' "
                         "where source = 'treinus' and date = %s", (d,))
@@ -196,7 +197,8 @@ def process_queue() -> int:
                 with conn.cursor() as cur:
                     cur.execute(
                         "update public.guide_push_queue set status = 'error', "
-                        "processed_at = now(), error = %s where id = %s", (msg, qid))
+                        "processed_at = now(), error = %s, "
+                        "attempts = attempts + 1 where id = %s", (msg, qid))
                 conn.commit()
         return n
 

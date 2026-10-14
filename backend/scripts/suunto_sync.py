@@ -289,12 +289,21 @@ def main() -> None:
     print("sessão suuntool OK")
 
     with psycopg.connect(DB_URL) as conn:
+        # preflight auto-curativo: re-fila erros, deteta gaps e detalhes
+        # em falta ANTES de sincronizar
+        from sync_preflight import preflight
+        pf = preflight(conn)
+        for line in pf["log"]:
+            print(f"  preflight: {line}")
+
         since = args.since
         if not since:
             last = last_synced(conn)
             if last < CUTOFF:
                 last = min(CUTOFF, date.today() - timedelta(days=1))
             since = last.isoformat()
+            if pf["since_override"] and pf["since_override"] < since:
+                since = pf["since_override"]
         print(f"sync desde: {since}")
 
         workouts = [m for w in fetch_workouts(since) if (m := map_workout(w))]
@@ -330,6 +339,13 @@ def main() -> None:
             # detalhes (SML -> activity_details) para os treinos novos
             from suunto_details import sync_details
             sync_details(conn, [w["source_key"] for w in workouts])
+        if pf["detail_keys"]:
+            # preflight: atividades antigas sem detalhe — re-ingestão
+            from suunto_details import sync_details
+            todo = [k for k in pf["detail_keys"] if k not in {w["source_key"] for w in workouts}]
+            if todo:
+                print(f"  preflight: re-ingestão de {len(todo)} detalhe(s)")
+                sync_details(conn, todo)
         # commit ANTES das guias/Treinus: uma falha a jusante (ex. guia
         # sem data) não pode fazer rollback dos dados de hoje
         conn.commit()
