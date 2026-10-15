@@ -104,24 +104,40 @@ def process_queue() -> int:
         icon = get_icon()
         n = 0
         for qid, d, payload in rows:
+            payload = payload or {}
             try:
                 with conn.cursor() as cur:
-                    cur.execute(
-                        "select date::text, name, data->>'detail', data->>'id_exercise' "
-                        "from public.planned_workouts where source = 'treinus' and date = %s",
-                        (d,),
-                    )
+                    # payload.id (remarcação) busca por id; senão por data
+                    if payload.get("id"):
+                        cur.execute(
+                            "select id, date::text, name, data->>'detail', data->>'id_exercise' "
+                            "from public.planned_workouts where source = 'treinus' and id = %s",
+                            (payload["id"],),
+                        )
+                    else:
+                        cur.execute(
+                            "select id, date::text, name, data->>'detail', data->>'id_exercise' "
+                            "from public.planned_workouts where source = 'treinus' and date = %s",
+                            (d,),
+                        )
                     r = cur.fetchone()
                 if not r:
                     raise RuntimeError(f"sem treino planeado Treinus em {d}")
-                row = dict(zip(("date", "name", "detail", "id_exercise"), r))
-                if payload:
-                    # payload (edição futura) sobrepõe campos do row
-                    for k, v in payload.items():
-                        row[k] = v
+                row = dict(zip(("row_id", "date", "name", "detail", "id_exercise"), r))
+                # payload sobrepõe campos do row (remarcação: date nova)
+                for k, v in payload.items():
+                    row[k] = v
                 guide = build_guide(row)
                 if not guide:
                     raise RuntimeError("detail sem segmentos")
+                # remarcação: apagar a guia da data antiga do relógio
+                move_from = payload.get("move_from")
+                if move_from and move_from != row["date"]:
+                    guides = json.loads(_suuntool("guides", "list", "-f", "json")).get("items") or []
+                    for g in guides:
+                        if g.get("localDate") == move_from:
+                            _suuntool("guides", "delete", g["id"], "--yes")
+                            print(f"  guia antiga de {move_from} apagada")
                 gid = upload_guide(guide, icon)
                 with conn.cursor() as cur:
                     # resolve todas as pendências dessa data, não só esta linha
@@ -131,7 +147,8 @@ def process_queue() -> int:
                         "where date = %s and status = 'pending'", (d,))
                     cur.execute(
                         "update public.planned_workouts set push_status = 'watch', "
-                        "pushed_at = now() where source = 'treinus' and date = %s", (d,))
+                        "pushed_at = now() where source = 'treinus' and id = %s",
+                        (row["row_id"],))
                 conn.commit()
                 print(f"  {d}: guia {gid} enviada ('{guide['name']}')")
                 n += 1

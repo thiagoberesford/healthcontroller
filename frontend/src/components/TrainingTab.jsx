@@ -711,7 +711,12 @@ export default function TrainingTab({ refreshKey }) {
         <>
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
             <div className="min-w-0 space-y-4">
-              <PlannedCard planned={planned} openGuide={openGuide} setOpenGuide={setOpenGuide} />
+              <PlannedCard
+                planned={planned}
+                openGuide={openGuide}
+                setOpenGuide={setOpenGuide}
+                onReschedule={() => api.listPlannedWorkouts().then(setPlanned)}
+              />
               <GymCard refreshKey={refreshKey} />
             </div>
             <SideCalendar planned={planned} onOpenActivity={setSelected} />
@@ -933,16 +938,27 @@ export default function TrainingTab({ refreshKey }) {
 }
 
 /* Treinos planeados vindos do Treinus (API direta) — briefing do treinador. */
-function PlannedCard({ planned, openGuide, setOpenGuide }) {
+function PlannedCard({ planned, openGuide, setOpenGuide, onReschedule }) {
   const today = dateKey(new Date());
   const upcoming = planned.filter((p) => p.date >= today);
   const [pushing, setPushing] = useState({});
+  const [resched, setResched] = useState(null); // {p, date}
   if (!upcoming.length) return null;
 
   const push = async (pdate) => {
     setPushing((s) => ({ ...s, [pdate]: "queued" }));
     const ok = await api.pushGuideToWatch(pdate);
     setPushing((s) => ({ ...s, [pdate]: ok ? "queued" : "error" }));
+  };
+
+  const applyResched = async () => {
+    if (!resched?.date || !resched?.p) return;
+    const ok = await api.rescheduleWorkout(
+      resched.p.id, resched.date, resched.p.rescheduled_from || resched.p.date,
+      resched.p.push_status === "watch",
+    );
+    setResched(null);
+    if (ok && onReschedule) onReschedule();
   };
 
   const pushBadge = (p) => {
@@ -995,21 +1011,87 @@ function PlannedCard({ planned, openGuide, setOpenGuide }) {
                 onClick={() => setOpenGuide(open ? null : p.id)}
                 className="flex w-full items-center justify-between gap-3 py-2.5 text-left"
               >
-                <span className="text-sm font-medium" style={{ color: C.text }}>
+                <span className="min-w-0 text-sm font-medium" style={{ color: C.text }}>
                   {p.name}
+                  {p.rescheduled_from && (
+                    <span
+                      className="ml-1 rounded-full px-1.5 py-0.5 text-[10px]"
+                      style={{ background: "rgba(0,180,179,.12)", color: C.teal }}
+                      title={`remarcado de ${fmtDate(p.rescheduled_from)}`}
+                    >
+                      → {fmtDate(p.date)}
+                    </span>
+                  )}
                 </span>
                 {p.data?.done && (
                   <span className="ml-2 text-xs" style={{ color: C.green }}>
                     feito
                   </span>
                 )}
-                <span className="flex items-center gap-2">
+                <span className="flex shrink-0 items-center gap-2">
                   <span className="text-xs" style={{ color: C.muted }}>
                     {p.data?.time_max ? `~${p.data.time_max}` : ""}
                   </span>
                   {pushBadge(p)}
+                  {!p.data?.done && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setResched(resched?.p?.id === p.id ? null : { p, date: "" });
+                      }}
+                      className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                      style={{ background: C.card, color: C.muted, border: `1px solid ${C.border}` }}
+                      title="Remarcar este treino para outro dia"
+                    >
+                      ↪
+                    </button>
+                  )}
                 </span>
               </button>
+              {resched?.p?.id === p.id && (
+                <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg p-3"
+                  style={{ background: C.card2, border: `1px solid ${C.border}` }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="text-xs" style={{ color: C.muted }}>Marcar para:</span>
+                  <input
+                    type="date"
+                    min={today}
+                    value={resched.date || p.date}
+                    onChange={(e) => setResched({ p, date: e.target.value })}
+                    className="rounded-lg px-2.5 py-1.5 text-xs"
+                    style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, accentColor: C.teal }}
+                  />
+                  <button
+                    onClick={applyResched}
+                    disabled={!resched.date || resched.date === (p.rescheduled_from || p.date)}
+                    className="rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+                    style={{ background: C.teal, color: "#04141a" }}
+                  >
+                    confirmar
+                  </button>
+                  <button
+                    onClick={() => setResched(null)}
+                    className="text-xs"
+                    style={{ color: C.muted }}
+                  >
+                    cancelar
+                  </button>
+                  {p.rescheduled_from && (
+                    <button
+                      onClick={async () => {
+                        await api.cancelReschedule(p.id);
+                        setResched(null);
+                        if (onReschedule) onReschedule();
+                      }}
+                      className="rounded-lg px-2.5 py-1.5 text-xs font-semibold"
+                      style={{ background: C.card, border: `1px solid ${C.border}`, color: C.muted }}
+                    >
+                      voltar ao dia original ({fmtDate(p.rescheduled_from)})
+                    </button>
+                  )}
+                </div>
+              )}
               {open && briefing && (
                 <pre
                   className="mb-3 whitespace-pre-wrap rounded-lg p-3 text-xs"

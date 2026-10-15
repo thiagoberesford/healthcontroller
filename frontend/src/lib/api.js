@@ -763,15 +763,58 @@ export const api = {
     const sb = supabase();
     if (!sb) return [];
     try {
-      const { data, error } = await sb
-        .from("planned_workouts")
-        .select("id,date,name,source,data,push_status")
-        .eq("source", "treinus")
-        .order("date", { ascending: true });
+      const [{ data, error }, { data: ov } = {}] = await Promise.all([
+        sb.from("planned_workouts")
+          .select("id,date,name,source,data,push_status")
+          .eq("source", "treinus")
+          .order("date", { ascending: true }),
+        sb.from("planned_overrides").select("id,new_date"),
+      ]);
       if (error) return [];
-      return data || [];
+      const overrides = {};
+      for (const o of ov || []) overrides[o.id] = o.new_date;
+      return (data || []).map((p) =>
+        overrides[p.id]
+          ? { ...p, date: overrides[p.id], rescheduled_from: p.date }
+          : p,
+      );
     } catch (e) {
       return [];
+    }
+  },
+
+  /* Remarcar um treino planeado para outro dia (override; o sync Treinus
+     não o apaga). Se já estava no relógio, re-fila o push para a nova
+     data e o worker apaga a guia antiga (payload.move_from). */
+  async rescheduleWorkout(id, newDate, oldDate, wasPushed) {
+    const sb = supabase();
+    if (!sb) return false;
+    try {
+      const { error } = await sb
+        .from("planned_overrides")
+        .upsert({ id, new_date: newDate });
+      if (error) return false;
+      if (wasPushed) {
+        await sb.from("guide_push_queue").insert({
+          source: "treinus",
+          date: newDate,
+          payload: { id, date: newDate, move_from: oldDate },
+        });
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  async cancelReschedule(id) {
+    const sb = supabase();
+    if (!sb) return false;
+    try {
+      await sb.from("planned_overrides").delete().eq("id", id);
+      return true;
+    } catch (e) {
+      return false;
     }
   },
 

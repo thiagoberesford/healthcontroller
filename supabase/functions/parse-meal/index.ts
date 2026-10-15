@@ -165,6 +165,11 @@ REGRAS DE UNIDADES (a parte mais importante — NUNCA as convertes):
 - Para unit="unidade", também calculas os gramas totais (quantity × peso unitário): fatia de queijo 15g | fatia de pão 30g | ovo 55g | colher de sopa 15g | banana 120g | maçã 180g.
   Exemplo: "3 fatias de queijo" → quantity=3, unit="unidade", grams=45. "2 ovos" → quantity=2, unit="unidade", grams=110.
 - "tosta de queijo (3 fatias de queijo e duas de pão)" são DOIS itens: queijo (3 unidade, 45g) e pão (2 unidade, 60g).
+- PRATOS COMPOSTOS sem quantidades explícitas: usas as porções padrão de verdade:
+  tosta/sandes de queijo = 2 fatias de pão (60g) + 2 fatias de queijo (30g); bifana = 1 pão (120g) + bife de porco (150g); hambúrguer = pão (100g) + carne (150g) + queijo fatia (20g); francesinha = prato completo ~800 kcal (estimativa única).
+- "queijo" SEM qualificação dentro de tosta/sandes = queijo FATIADO tipo flamengo (NÃO queijo fresco, NÃO queijo para barrar; kcal_100g ≈ 330). "pão" sem qualificação = pão de forma/pão de mistura (kcal_100g ≈ 260).
+- product_search reflete a interpretação correta: para o queijo de uma tosta usa "queijo flamengo", para o pão usa "pão de forma". Nunca pesquises pelo prato inteiro ("tosta de queijo") — decompõe.
+- VERIFICAÇÃO FINAL de plausibilidade: uma tosta de queijo inteira tem ~250-400 kcal, um sandes ~250 kcal, um prato de carne 400-700 kcal. Se o total der muito abaixo disso, as porções estão erradas — corrige antes de responder.
 
 REGRAS DE MARCA E PESQUISA:
 - Se houver marca ("iogurte da Mimosa", "falafel da Sementes do Mundo do Continente"), extrais: brand="Mimosa"/"Sementes do Mundo", store_hint="Continente" quando mencionada a loja.
@@ -217,18 +222,23 @@ async function localFoodSearch(
   brand: string | null,
 ): Promise<Record<string, unknown> | null> {
   if (!SUPABASE_URL || !term) return null;
-  const q = new URLSearchParams({
-    select: "id,name,brand,category,kcal,protein,carbs,fat,portion,source",
-    name: `ilike.*${term}*`,
-    limit: "10",
-  });
-  try {
+  const fetchRows = async (nameFilter: string) => {
+    const q = new URLSearchParams({
+      select: "id,name,brand,category,kcal,protein,carbs,fat,portion,source",
+      name: nameFilter,
+      limit: "50",
+    });
     const r = await fetch(`${SUPABASE_URL}/rest/v1/foods?${q}`, {
       headers: { Authorization: auth, apikey: SUPABASE_ANON_KEY },
     });
-    if (!r.ok) return null;
-    const rows: Record<string, unknown>[] = await r.json();
-    if (!rows?.length) return null;
+    if (!r.ok) return [] as Record<string, unknown>[];
+    return (await r.json()) as Record<string, unknown>[];
+  };
+  try {
+    // 1ª tentativa: nome exato; 2ª: contém o termo
+    let rows = await fetchRows(`ilike.${term}`);
+    if (!rows.length) rows = await fetchRows(`ilike.*${term}*`);
+    if (!rows.length) return null;
     const norm = (x: unknown) =>
       String(x ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (brand) {
@@ -236,7 +246,22 @@ async function localFoodSearch(
         rows.find((f) => norm(String(f.brand ?? "")).includes(norm(brand)));
       if (exact) return exact;
     }
-    return rows.find((f) => !f.brand) ?? rows[0];
+    /* ranking para termos genéricos ("queijo", "pão"): o ilike devolve
+       50 candidatos a ordem arbitrária — escolher o mais PROVÁVEL:
+       nome exato > sem marca (genérico curado) > nome curto genérico */
+    const termNorm = norm(term);
+    const score = (f: Record<string, unknown>) => {
+      const n = norm(f.name);
+      let s = 0;
+      if (n === termNorm) s += 100;
+      else if (n.startsWith(termNorm)) s += 50;
+      if (!f.brand || norm(f.brand) === "meu registo") s += 20; // genérico
+      if (n.split(/\s+/).length <= 2) s += 10; // "queijo" > "queijo fresco para barrar"
+      if (/flamengo|fatiado|de forma|de mistura/i.test(n) && /^queijo$|^p[aã]o$/i.test(termNorm)) s += 15;
+      s -= Math.min(n.length / 10, 5); // nomes compridos = produtos específicos
+      return s;
+    };
+    return [...rows].sort((a, b) => score(b) - score(a))[0];
   } catch {
     return null;
   }
